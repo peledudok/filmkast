@@ -496,20 +496,6 @@ function fillDetail() {
       return '<button class="btn wide ' + (has ? 'ghost' : '') + '" data-a="pickdetail" data-l="' + l.id + '"' + (has ? ' disabled' : '') + '>' + esc(l.name) + (has ? ' · staat al in lijst' : '') + '</button>';
     }).join('') + '</div></section>';
   }
-  const rel = d && d.release ? fmtDate(d.release) : (g('year') || '--');
-  if (V.type === 'tv') {
-    const seasons = d && d.seasons ? plural(d.seasons, 'seizoen', 'seizoenen') + (d.episodes ? ' · ' + d.episodes + ' afl.' : '') : '--';
-    h += dsec2('Eerste uitzending', esc(rel), 'Seizoenen', esc(seasons));
-  } else {
-    h += dsec2('Verschijningsdatum', esc(rel), 'Speelduur', d && d.runtime ? d.runtime + ' min' : '--');
-  }
-  if (d && d.alt && d.alt.length) {
-    const seenT = new Set([String(title).toLowerCase(), String(d.orig || '').toLowerCase()]);
-    const others = d.alt.filter(x => { const k = x.toLowerCase(); if (seenT.has(k)) return false; seenT.add(k); return true; }).slice(0, 6);
-    if (others.length) h += dsec('Andere titels', others.map(x => esc(x)).join('<br>'));
-  }
-  if (g('genres').length) h += dsec('Genre', esc(g('genres').join(' - ')));
-  if (g('overview')) h += dsec('Beschrijving', esc(g('overview')));
   if (V.type === 'tv') {
     const list = seasonsOf(e, d);
     if (list.length || e) {
@@ -524,6 +510,20 @@ function fillDetail() {
       h += '</section>';
     }
   }
+  const rel = d && d.release ? fmtDate(d.release) : (g('year') || '--');
+  if (V.type === 'tv') {
+    const seasons = d && d.seasons ? plural(d.seasons, 'seizoen', 'seizoenen') + (d.episodes ? ' · ' + d.episodes + ' afl.' : '') : '--';
+    h += dsec2('Eerste uitzending', esc(rel), 'Seizoenen', esc(seasons));
+  } else {
+    h += dsec2('Verschijningsdatum', esc(rel), 'Speelduur', d && d.runtime ? d.runtime + ' min' : '--');
+  }
+  if (d && d.alt && d.alt.length) {
+    const seenT = new Set([String(title).toLowerCase(), String(d.orig || '').toLowerCase()]);
+    const others = d.alt.filter(x => { const k = x.toLowerCase(); if (seenT.has(k)) return false; seenT.add(k); return true; }).slice(0, 6);
+    if (others.length) h += dsec('Andere titels', others.map(x => esc(x)).join('<br>'));
+  }
+  if (g('genres').length) h += dsec('Genre', esc(g('genres').join(' - ')));
+  if (g('overview')) h += dsec('Beschrijving', esc(g('overview')));
   if (d && d.cast.length) {
     h += '<section class="dsec"><h2>Acteurs</h2><div class="cast">' + d.cast.map(p => '<div class="cm">' +
       (p.p ? '<img loading="lazy" alt="" src="' + IMG + 'w185' + esc(p.p) + '">' : '<div class="ph"></div>') +
