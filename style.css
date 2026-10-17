@@ -206,7 +206,7 @@ details.how ol{margin:8px 0 0;padding-left:22px;display:grid;gap:6px}
 .sb{display:grid;gap:2px;min-width:0}
 .sb b{font-size:19px}
 .sb span{color:var(--mut);font-size:15px}
-.sc{flex:none;min-height:44px;font-size:16px}
+.sgz{flex:none;min-height:44px;font-size:16px}
 .eps{display:flex;flex-direction:column;padding:0 max(14px,env(safe-area-inset-right,0px)) 0 max(14px,env(safe-area-inset-left,0px))}
 .ep{padding:14px 0;border-bottom:1px solid var(--line)}
 .eh{display:flex;gap:12px;justify-content:space-between;align-items:flex-start}
@@ -222,3 +222,6 @@ details.how ol{margin:8px 0 0;padding-left:22px;display:grid;gap:6px}
 .pcoll .fld{gap:4px}
 .pcoll .chk{min-height:40px}
 .dtitle{margin-top:10px}
+.dl{display:flex;gap:8px}
+.pbar{height:10px;border-radius:5px;background:var(--s2);overflow:hidden}
+.pbar i{display:block;height:100%;background:var(--acc)}
