@@ -13,14 +13,14 @@ const PUB = [
   { id: 'series', name: 'Populaire series', path: '/tv/popular', type: 'tv' },
   { id: 'beste-series', name: 'Best beoordeelde series', path: '/tv/top_rated', type: 'tv' }
 ];
-const PLAT = [['bios', 'Bios'], ['netflix', 'Netflix'], ['sky', 'SkyShowtime'], ['hbo', 'HBO Max'], ['prime', 'Prime Video'], ['npo', 'NPO Start'], ['vl', 'Videoland']];
+const PLAT = [['bios', 'Bios'], ['netflix', 'Netflix'], ['sky', 'SkyShowtime'], ['hbo', 'HBO Max'], ['prime', 'Prime Video'], ['npo', 'NPO Start'], ['vl', 'Videoland'], ['disney', 'Disney+'], ['apple', 'Apple TV'], ['pathe', 'Pathé'], ['oscar', 'Oscar'], ['globe', 'Golden Globe'], ['grammy', 'Grammy']];
 const ACCENTS = ['#e0a458', '#7fc8bd', '#8fb4ff', '#d98b9b', '#a9d36b'];
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
-const fmtDate = s => { if (!s) return ''; const d = new Date(s + 'T00:00:00'); return isNaN(d) ? s : d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' }).replace(/\./g, ''); };
+const fmtDate = s => { if (!s) return ''; if (!/^\d{4}-/.test(s)) return 'datum onbekend'; const d = new Date(s + 'T00:00:00'); return isNaN(d) ? s : d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' }).replace(/\./g, ''); };
 const isoOf = ts => { const d = new Date(ts); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 const ago = ts => {
   const days = Math.max(0, Math.floor((Date.now() - ts) / 864e5));
@@ -216,7 +216,7 @@ function route() {
   const p = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent);
   closeDrawer(); closeSheet(); if (IO) { IO.disconnect(); IO = null; }
   window.scrollTo(0, 0);
-  const views = { l: vList, p: vPublic, e: vEntry, d: vDetail, beheer: vManage, instellingen: vSettings, backup: vBackup, over: vAbout, toevoegen: vAdd, nieuw: vNew, c: vCollection, s: vSeason };
+  const views = { l: vList, p: vPublic, e: vEntry, d: vDetail, beheer: vManage, instellingen: vSettings, backup: vBackup, over: vAbout, toevoegen: vAdd, nieuw: vNew, c: vCollection, s: vSeason, import: vImport };
   const f = views[p[0]];
   if (!f) { location.replace('#/l/' + S.lists[0].id); return; }
   f(p[1], p[2], p[3]);
@@ -464,7 +464,7 @@ function fillDetail() {
     : poster;
   const rating = g('rating');
   let h = '<div class="dhero">' + (d && d.backdrop ? '<img alt="" src="' + IMG + 'w780' + esc(d.backdrop) + '">' : '') +
-    '<div class="dtop"><button class="ib glass" data-a="back" aria-label="Terug">' + ico('back') + '</button>' +
+    '<div class="dtop"><div class="dl"><button class="ib glass" data-a="back" aria-label="Terug">' + ico('back') + '</button><button class="ib glass" data-a="drawer" aria-label="Lijsten">' + ico('menu') + '</button></div>' +
     (V.tmdbId ? '<button class="ib glass" data-a="share" aria-label="Delen">' + ico('share') + '</button>' : '') + '</div></div>' +
     '<div class="dmain">' + posterBlock + '<div class="dside">' +
     (d && d.cert ? '<span class="cert">' + esc(d.cert) + '</span>' : '') +
@@ -477,11 +477,11 @@ function fillDetail() {
   if (V.err && V.err !== 'GEEN_SLEUTEL') h += '<p class="over small">' + esc(V.err) + '</p>';
   if (e) {
     h += '<section class="panel2 pcoll"><h2>In mijn collectie</h2>' +
-      '<label class="fld">Lijst<select id="e-list" class="in" data-in="elist">' + S.lists.map(l => '<option value="' + l.id + '"' + (l.id === e.list ? ' selected' : '') + '>' + esc(l.name) + '</option>').join('') + '</select></label>' +
+      '<label class="fld">Lijst<select id="e-list" class="in" data-in="elist">' + S.lists.filter(l => l.id === e.list || !((e.type === 'tv' && l.id === 'movies') || (e.type === 'movie' && l.id === 'tv'))).map(l => '<option value="' + l.id + '"' + (l.id === e.list ? ' selected' : '') + '>' + esc(l.name) + '</option>').join('') + '</select></label>' +
       '<div class="chkrow"><label class="chk"><input type="checkbox" data-in="eseen"' + (e.seen ? ' checked' : '') + '> Gezien</label>' +
       '<label class="chk"><input type="checkbox" data-in="ens"' + (e.ns ? ' checked' : '') + '> Niet gezien</label></div>' +
       (e.ns ? '<label class="fld">Waarom niet gezien?<input class="in" data-in="ewhy" value="' + esc(e.why || '') + '" placeholder="Bijvoorbeeld: geen interesse, te eng"></label>' : '') +
-      (e.seen ? '<label class="fld">Datum gezien<input type="date" class="in" value="' + esc(e.seen) + '" max="' + today() + '" data-in="edate"></label>' : '') +
+      (e.seen ? '<label class="fld">Datum gezien<input type="date" class="in" value="' + esc(/^\d{4}-/.test(e.seen) ? e.seen : '') + '" max="' + today() + '" data-in="edate"></label>' : '') +
       '<div class="fold"><button class="foldh" data-a="toggletags" aria-expanded="' + (V.tagsOpen ? 'true' : 'false') + '"><span>Tags</span><small>' +
       esc((e.where || []).map(k => (PLAT.find(q => q[0] === k) || [])[1]).filter(Boolean).join(', ') || 'Geen gekozen') + '</small><i>' + (V.tagsOpen ? '▴' : '▾') + '</i></button>' +
       (V.tagsOpen ? '<div class="foldb"><div class="chkrow">' + PLAT.map(q => '<label class="chk"><input type="checkbox" data-in="eplat" data-k="' + q[0] + '"' + ((e.where || []).includes(q[0]) ? ' checked' : '') + '> ' + q[1] + '</label>').join('') + '</div>' +
@@ -506,7 +506,7 @@ function fillDetail() {
         '<div class="spos">' + (q.poster ? '<img loading="lazy" alt="" src="' + IMG + 'w185' + esc(q.poster) + '">' : '') + '</div>' +
         '<div class="sb"><b>' + esc(q.name || 'Seizoen ' + q.n) + '</b><span>' + [q.eps ? plural(q.eps, 'aflevering', 'afleveringen') : '', q.date ? q.date.slice(0, 4) : ''].filter(Boolean).join(' · ') + '</span></div></a>' +
         (ed ? '<button class="ib" data-a="renameseason" data-n="' + q.n + '" aria-label="Naam wijzigen">' + ico('edit') + '</button><button class="ib" data-a="delseason" data-n="' + q.n + '" aria-label="Seizoen verwijderen">' + ico('trash') + '</button>'
-          : (e ? '<label class="chk sc"><input type="checkbox" data-in="eseason" data-n="' + q.n + '"' + ((e.sn || []).includes(q.n) ? ' checked' : '') + '> Gezien</label>' : '')) + '</div>').join('') : '<p class="small" style="margin:8px 0">Nog geen seizoenen. Voeg er een toe met de knop hierboven.</p>') + '</div>';
+          : (e ? '<label class="chk sgz"><input type="checkbox" data-in="eseason" data-n="' + q.n + '"' + ((e.sn || []).includes(q.n) ? ' checked' : '') + '> Gezien</label>' : '')) + '</div>').join('') : '<p class="small" style="margin:8px 0">Nog geen seizoenen. Voeg er een toe met de knop hierboven.</p>') + '</div>';
       h += '</section>';
     }
   }
@@ -624,8 +624,202 @@ function vBackup() {
     '<button class="btn pri" data-a="export">Back-up opslaan (' + plural(S.entries.length, 'titel', 'titels') + ')</button>' +
     '<button class="btn" data-a="exportcsv">Alles als CSV voor Excel</button></section>' +
     '<section class="panel2"><h2>Back-up terugzetten</h2><p class="small" style="margin:0">Kies een eerder opgeslagen back-up (.json). Je kiest daarna of je samenvoegt of vervangt.</p>' +
-    '<label class="btn" for="imp">Bestand kiezen</label><input id="imp" type="file" accept=".json,application/json" data-in="import" hidden></section>';
+    '<label class="btn" for="imp">Bestand kiezen</label><input id="imp" type="file" accept=".json,application/json" data-in="import" hidden></section>' +
+    '<section class="panel2"><h2>Importeren uit MovieMeter</h2><p class="small" style="margin:0">Heb je een CSV-export uit MovieMeter? De app zoekt de films bij TMDb op en zet ze in je lijsten.</p><a class="btn" href="#/import">CSV importeren</a></section>';
 }
+/* ---------- import uit CSV (MovieMeter-export) ---------- */
+const IMPK = { Amazon: 'prime', Apple: 'apple', Disney: 'disney', HBO: 'hbo', Netflix: 'netflix', Pathe: 'pathe', SkyShowtime: 'sky', Videoland: 'vl', Oscar: 'oscar', GoldenGlobe: 'globe' };
+let IMP = null;
+const plainT = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/&/g, ' en ').replace(/[^a-z0-9]+/g, ' ').trim();
+function csvDecode(buf) {
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (e) { return new TextDecoder('windows-1252').decode(buf); }
+}
+function parseCsv(t, d) {
+  const rows = []; let row = [], f = '', q = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (q) { if (c === '"') { if (t[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+    else if (c === '"') q = true;
+    else if (c === d) { row.push(f); f = ''; }
+    else if (c === '\n') { row.push(f); rows.push(row); row = []; f = ''; }
+    else if (c === '\r') { /* negeren */ }
+    else f += c;
+  }
+  if (f !== '' || row.length) { row.push(f); rows.push(row); }
+  return rows;
+}
+const SEEN0 = new Set('1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,23,25,26,30,31,32,35,38,39,41,42,43,44,49,51,53,54,55,56,57,58,59,61,63,65,66,67,69,70,71,72,73,74,75,76,77,78,79,80,81,82,85,86,87,89,90,91,92,93,94,95,96,99,101,103,108,109,111,112,113,115,117,118,119,121,122,123,124,125,129,130,132,133,135,136,138,139,140,141,144,145,147,149,150,151,154,155,156,157,159,161,163,164,165,166,168,169,170,171,172,173,174,175,176,178,179,180,181,182,183,184,187,188,189,190,192,193,195,197,198,199,201,203,205,207,208,209,210,211,212,213,214,215,216,217,218,219,220,221,222,223,225,226,227,228,229,230,231,232,233,234,236,240,242,243,244,246,247,248,249,250,254,257,259,260,261,262,263,265,266,267,269,270,271,273,274,275,276,277,278,279,280,281,283,284,286,287,290,291,292,294,295,296,297,298,299,302,303,304,305,306,307,308,310,312,319,320,322,323,324,325,326,330,337,340,342,343,344,345,346,347,348,349,358,359,360,361,365,366,367,371,374,377,379,387,389,390,395,398,402,407,413,416,422,423,426,430,434,438,441,443,447,449,454,461,466,468,475,486,488,491,494,504,514,563,584,586,587,612,622,654,715,719,721,722,725,787,830,838,851,901,912,924,935,940,997,1008,1087,1095,1117,1197,1214,1236,1251,1261,1314,1337,1396,1422,1430,1431,1434,1447,1451'.split(','));
+const WHY = {
+  'fifty shades of grey': 'Te oud - verwijderd', 'minions': 'Niet gedownload', 'youth': 'Niet afgekeken',
+  'morbius': 'Te oud, horror, verwijderd', 'the shift': 'Niet gekeken',
+  'hot milk': 'Niet gekeken'
+};
+function buildPlan(text) {
+  text = text.replace(/^﻿/, '');
+  const first = text.split('\n')[0];
+  const d = first.split(';').length > first.split(',').length ? ';' : ',';
+  const t = parseCsv(text, d);
+  const h = (t[0] || []).map(x => x.trim());
+  if (!h.includes('OriginalTitle')) throw new Error('KOLOMMEN');
+  const dateOk = s => /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
+  return t.slice(1).filter(r => r.length > 3).map(r => {
+    const o = {}; h.forEach((k, i) => { o[k] = (r[i] || '').trim(); });
+    const where = new Set();
+    Object.keys(IMPK).forEach(k => { if (o[k] === 'True') where.add(IMPK[k]); });
+    if (o.Bioscoopfilm === 'True' || /^bi[os]/i.test(o.MediaLabel || '')) where.add('bios');
+    if (/^netflix$/i.test(o.MediaLabel || '')) where.add('netflix');
+    const color = +o.ColorTag || 0;
+    const watched = dateOk(o.DateWatched), added = dateOk(o.Date);
+    const ns = !!color || o.nietgezien === 'True';
+    let list = 'movies', seen = '', why = '';
+    if (ns) { if (color) why = 'Kleur ' + color + ' – reden nog invullen'; }
+    else if (watched) seen = watched;
+    else if (SEEN0.has(o.Number)) seen = 'onbekend';
+    else list = 'wish';
+    const fix = WHY[(o.OriginalTitle || '').trim().toLowerCase()];
+    if (fix && ns) why = fix;
+    const im = (o.URL || '').match(/imdb\.com\/title\/(tt\d+)/);
+    return {
+      title: o.OriginalTitle, tr: o.TranslatedTitle || '', type: o.Serie === 'True' ? 'tv' : 'movie', added, seen, ns, why, list,
+      where: [...where], imdb: im ? im[1] : '', note: (o.Comments || '').replace(/\r/g, '').replace(/\n{3,}/g, '\n\n').trim(), res: null, pick: null
+    };
+  }).filter(x => x.title);
+}
+async function apiRetry(path, params) {
+  let last;
+  for (let i = 0; i < 4; i++) {
+    try { return await api(path, params); }
+    catch (e) {
+      last = e;
+      const m = String(e.message);
+      if (m === 'GEEN_SLEUTEL' || m === 'SLEUTEL_ONGELDIG' || m === 'HTTP_404') throw e;
+      await new Promise(r => setTimeout(r, 700 * (i + 1)));
+    }
+  }
+  throw last;
+}
+async function matchOne(rec) {
+  if (rec.imdb) {
+    const r = await apiRetry('/find/' + rec.imdb, { external_source: 'imdb_id' });
+    const hit = ((rec.type === 'tv' ? r.tv_results : r.movie_results) || [])[0];
+    if (hit) return { auto: hit, cands: [hit] };
+  }
+  const want = [rec.title, rec.tr].filter(Boolean), wk = want.map(plainT);
+  const ay = +rec.added.slice(0, 4) || 9999;
+  const all = [];
+  for (const q of want) {
+    const r = await apiRetry('/search/' + rec.type, { query: q, include_adult: 'false' });
+    (r.results || []).slice(0, 10).forEach(c => { if (!all.some(x => x.id === c.id)) all.push(c); });
+    if (all.some(c => wk.includes(plainT(c.title || c.name)) || wk.includes(plainT(c.original_title || c.original_name)))) break;
+  }
+  const yr = c => +(c.release_date || c.first_air_date || '').slice(0, 4) || 0;
+  const exact = all.filter(c => wk.includes(plainT(c.title || c.name)) || wk.includes(plainT(c.original_title || c.original_name)));
+  const rest = all.filter(c => !exact.includes(c));
+  const cands = exact.concat(rest).slice(0, 6);
+  if (exact.length) {
+    const pl = exact.filter(c => !yr(c) || yr(c) <= ay + 1).sort((a, b) => (ay - (yr(a) || ay)) - (ay - (yr(b) || ay)));
+    if (exact.length === 1 && pl.length === 1) return { auto: pl[0], cands };
+    if (pl.length) {
+      const d0 = ay - (yr(pl[0]) || ay), d1 = pl[1] ? ay - (yr(pl[1]) || ay) : 99;
+      if (d0 <= 1 && d1 > 1) return { auto: pl[0], cands };
+    }
+  }
+  return { cands };
+}
+function vImport() {
+  V = { kind: 'imp' };
+  if (!IMP || IMP.phase === 'done') IMP = { phase: 'pick' };
+  renderImp();
+}
+function impCounts() {
+  const c = { seen: 0, ns: 0, wish: 0 };
+  IMP.recs.forEach(r => { if (r.ns) c.ns++; else if (r.seen) c.seen++; else c.wish++; });
+  return c;
+}
+function renderImp() {
+  if (V.kind !== 'imp' || !IMP) return;
+  const I = IMP;
+  let h = bar({ title: 'Importeren uit CSV' });
+  if (I.err) h += '<div class="notice">' + (I.err === 'GEEN_SLEUTEL' ? '<b>API-sleutel nodig</b><span>Vul eerst je TMDb-sleutel in bij Instellingen.</span>' : esc(I.err)) + '</div>';
+  if (I.phase === 'pick') {
+    h += '<section class="panel2"><h2>Bestand kiezen</h2><p class="small" style="margin:0">Kies het CSV-bestand uit MovieMeter (films). De app zoekt elke titel bij TMDb op. Laat dit scherm open tijdens het importeren.</p>' +
+      '<label class="btn pri" for="impf">CSV-bestand kiezen</label><input id="impf" type="file" accept=".csv,text/csv,text/plain" data-in="impfile" hidden></section>';
+  } else if (I.phase === 'ready') {
+    const c = impCounts();
+    h += '<section class="panel2"><h2>Dit gaat er gebeuren</h2><p style="margin:0">' + plural(I.recs.length, 'titel', 'titels') + ' in het bestand:</p>' +
+      '<div class="stack small"><div>• <b style="color:var(--fg)">' + c.seen + '</b> gezien, naar de lijst Films (bij sommige is de datum onbekend)</div>' +
+      '<div>• <b style="color:var(--fg)">' + c.ns + '</b> niet gezien (gekleurd of "niet gezien"), naar de lijst Films</div>' +
+      '<div>• <b style="color:var(--fg)">' + c.wish + '</b> zonder kijkdatum, naar de Verlanglijst</div></div>' +
+      '<p class="small" style="margin:0">Opmerkingen worden je notitie. De datum van toevoegen wordt "Toegevoegd op". Vinkjes zoals Netflix, Bios en Oscar worden overgenomen.</p>' +
+      '<button class="btn pri" data-a="impstart">Importeren starten</button><label class="btn ghost" for="impf">Ander bestand kiezen</label><input id="impf" type="file" accept=".csv,text/csv,text/plain" data-in="impfile" hidden></section>';
+  } else if (I.phase === 'run') {
+    const pct = Math.round(100 * I.done / I.recs.length);
+    h += '<section class="panel2"><h2>Bezig met opzoeken</h2><p style="margin:0">' + I.done + ' van ' + I.recs.length + '</p>' +
+      '<div class="pbar"><i style="width:' + pct + '%"></i></div><p class="small" style="margin:0">Dit duurt een paar minuten. Laat dit scherm open.</p>' +
+      '<button class="btn ghost" data-a="impcancel">Stoppen</button></section>';
+  } else if (I.phase === 'review') {
+    const i = I.todo[I.ri], r = I.recs[i];
+    h += '<section class="panel2"><h2>Controleren ' + (I.ri + 1) + ' van ' + I.todo.length + '</h2>' +
+      '<div><b style="font-size:21px">' + esc(r.title) + '</b>' + (r.tr ? '<div class="small">' + esc(r.tr) + '</div>' : '') +
+      '<div class="small">' + (r.added ? 'Toegevoegd op ' + esc(fmtDate(r.added)) : '') + '</div></div>' +
+      (r.res.cands.length ? '<div class="stack">' + r.res.cands.map(c => '<button class="btn wide" data-a="imppick" data-id="' + c.id + '">' +
+        esc((c.title || c.name || '') + ' (' + ((c.release_date || c.first_air_date || '').slice(0, 4) || '?') + ')') +
+        ((c.original_title || c.original_name) && (c.original_title || c.original_name) !== (c.title || c.name) ? ' – ' + esc(c.original_title || c.original_name) : '') + '</button>').join('') + '</div>'
+        : '<p class="small" style="margin:0">Niets gevonden bij TMDb.</p>') +
+      '<button class="btn ghost" data-a="impskip">Overslaan</button></section>';
+  } else if (I.phase === 'done') {
+    h += '<section class="panel2"><h2>Klaar</h2><p style="margin:0"><b>' + plural(I.added, 'titel', 'titels') + '</b> toegevoegd.' + (I.dup ? ' ' + plural(I.dup, 'titel stond', 'titels stonden') + ' al in je collectie.' : '') + '</p>' +
+      (I.skipped.length ? '<p class="small" style="margin:0">Niet geïmporteerd (' + I.skipped.length + '), voeg deze zelf toe:</p><div class="small" style="max-height:260px;overflow:auto">' + I.skipped.map(x => esc(x)).join('<br>') + '</div>' : '') +
+      '<a class="btn pri" href="#/l/movies">Naar mijn films</a></section>';
+  }
+  app.innerHTML = h;
+}
+async function impRun() {
+  const I = IMP; I.phase = 'run'; I.done = 0; I.err = ''; I.cancel = false; renderImp();
+  try { await ensureGenres(); } catch (e) { I.err = errMsg(e); I.phase = 'ready'; renderImp(); return; }
+  const queue = I.recs.map((r, i) => i).filter(i => !I.recs[i].res);
+  I.done = I.recs.length - queue.length;
+  async function worker() {
+    while (queue.length && !I.cancel) {
+      const r = I.recs[queue.shift()];
+      try { r.res = await matchOne(r); }
+      catch (e) {
+        const m = String(e.message);
+        if (m === 'GEEN_SLEUTEL' || m === 'SLEUTEL_ONGELDIG') { I.err = errMsg(e); I.cancel = true; return; }
+        r.res = { cands: [] };
+      }
+      I.done++;
+      if (I.done % 8 === 0) renderImp();
+    }
+  }
+  await Promise.all(Array.from({ length: 5 }, worker));
+  if (I.err) { I.phase = 'ready'; renderImp(); return; }
+  if (I.cancel) { I.phase = 'ready'; renderImp(); return; }
+  I.todo = I.recs.map((r, i) => i).filter(i => !I.recs[i].res.auto);
+  I.ri = 0;
+  if (I.todo.length) { I.phase = 'review'; renderImp(); } else impFinish();
+}
+function impNext() { IMP.ri++; if (IMP.ri >= IMP.todo.length) impFinish(); else renderImp(); }
+function impFinish() {
+  const I = IMP; let added = 0, dup = 0; const skipped = [];
+  const lid = id => (listById(id) ? id : S.lists[0].id);
+  I.recs.forEach(r => {
+    const hit = r.pick || (r.res && r.res.auto);
+    if (!hit) { skipped.push(r.title + (r.added ? ' (' + r.added.slice(0, 4) + ')' : '')); return; }
+    const it = norm(hit, r.type);
+    if (S.entries.some(e => e.type === r.type && e.tmdbId === it.tmdbId)) { dup++; return; }
+    const ts = r.added ? new Date(r.added + 'T12:00:00').getTime() : Date.now();
+    S.entries.push({
+      id: uid(), list: lid(r.list), type: r.type, tmdbId: it.tmdbId, title: it.title || r.title, year: it.year, poster: it.poster, overview: it.overview,
+      rating: it.rating, genres: it.genres, seen: r.seen, note: r.note, tags: [], sn: [], where: r.where.slice(), ns: r.ns, why: r.why, added: ts, u: Date.now()
+    });
+    added++;
+  });
+  commit();
+  I.phase = 'done'; I.added = added; I.dup = dup; I.skipped = skipped;
+  renderImp();
+}
+
 function cleanEntry(x) {
   return {
     id: String(x.id || uid()), list: String(x.list || ''), type: x.type === 'tv' ? 'tv' : 'movie', tmdbId: +x.tmdbId || 0,
@@ -714,7 +908,7 @@ function sheetFilter() {
   const tags = [...new Set(S.entries.filter(e => e.list === V.id).flatMap(e => e.tags || []))].sort((a, b) => a.localeCompare(b, 'nl'));
   openSheet('<h3>Filteren</h3>' +
     '<label class="fld">Gezien<select class="in" data-in="fseen"><option value="">Alles</option><option value="seen"' + (f.seen === 'seen' ? ' selected' : '') + '>Gezien</option><option value="unseen"' + (f.seen === 'unseen' ? ' selected' : '') + '>Nog niet gezien</option><option value="ns"' + (f.seen === 'ns' ? ' selected' : '') + '>Bewust niet gezien</option></select></label>' +
-    '<label class="fld">Waar te zien<select class="in" data-in="fplat"><option value="">Overal</option>' + PLAT.map(q => '<option value="' + q[0] + '"' + (f.plat === q[0] ? ' selected' : '') + '>' + q[1] + '</option>').join('') + '</select></label>' +
+    '<label class="fld">Tags<select class="in" data-in="fplat"><option value="">Overal</option>' + PLAT.map(q => '<option value="' + q[0] + '"' + (f.plat === q[0] ? ' selected' : '') + '>' + q[1] + '</option>').join('') + '</select></label>' +
     '<label class="fld">Genre<select class="in" data-in="fgenre"><option value="">Alle genres</option>' + genres.map(x => '<option' + (f.genre === x ? ' selected' : '') + '>' + esc(x) + '</option>').join('') + '</select></label>' +
     '<div class="cols"><button class="btn ghost" data-a="clearfilter">Wissen</button><button class="btn pri" data-a="closesheet">Klaar</button></div>');
 }
@@ -961,6 +1155,10 @@ const A = {
     e.genres = $('#ed-genres').value.split(',').map(x => x.trim()).filter(Boolean);
     e.u = Date.now(); commit(); closeSheet(); fillDetail(); toast('Opgeslagen');
   },
+  impstart: () => impRun(),
+  impcancel: () => { if (IMP) IMP.cancel = true; },
+  imppick: d => { const r = IMP.recs[IMP.todo[IMP.ri]]; r.pick = r.res.cands.find(c => String(c.id) === d.id) || null; impNext(); },
+  impskip: () => impNext(),
   syncnow: () => { if (!syncOn()) { toast('Vul eerst je toegangscode in'); return; } syncNow(false); },
   savenew: () => {
     const title = $('#n-title').value.trim();
@@ -1011,6 +1209,14 @@ const IN = {
   },
   aq: el => { V.q = el.value; addSearch(); },
   fseen: el => { V.f.seen = el.value; fillItems(); },
+  impfile: el => {
+    const f = el.files && el.files[0]; if (!f) return;
+    f.arrayBuffer().then(buf => {
+      try { const recs = buildPlan(csvDecode(buf)); if (!recs.length) throw new Error('LEEG'); IMP = { phase: 'ready', recs }; }
+      catch (e) { IMP = { phase: 'pick', err: 'Dit bestand lijkt geen MovieMeter-CSV te zijn.' }; }
+      renderImp();
+    });
+  },
   fgenre: el => { V.f.genre = el.value; fillItems(); },
   ftag: el => { V.f.tag = el.value; fillItems(); },
   fplat: el => { V.f.plat = el.value; fillItems(); },
