@@ -13,6 +13,7 @@ const PUB = [
   { id: 'series', name: 'Populaire series', path: '/tv/popular', type: 'tv' },
   { id: 'beste-series', name: 'Best beoordeelde series', path: '/tv/top_rated', type: 'tv' }
 ];
+const PLAT = [['bios', 'Bios'], ['netflix', 'Netflix'], ['sky', 'SkyShowtime'], ['hbo', 'HBO Max'], ['prime', 'Prime Video'], ['npo', 'NPO Start'], ['vl', 'Videoland']];
 const ACCENTS = ['#e0a458', '#7fc8bd', '#8fb4ff', '#d98b9b', '#a9d36b'];
 
 const $ = s => document.querySelector(s);
@@ -20,6 +21,15 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&a
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 const fmtDate = s => { if (!s) return ''; const d = new Date(s + 'T00:00:00'); return isNaN(d) ? s : d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' }).replace(/\./g, ''); };
+const isoOf = ts => { const d = new Date(ts); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+const ago = ts => {
+  const days = Math.max(0, Math.floor((Date.now() - ts) / 864e5));
+  if (days < 1) return 'vandaag';
+  if (days < 14) return plural(days, 'dag', 'dagen');
+  if (days < 60) return plural(Math.floor(days / 7), 'week', 'weken');
+  if (days < 730) return plural(Math.floor(days / 30), 'maand', 'maanden');
+  return plural(Math.floor(days / 365), 'jaar', 'jaar');
+};
 const plural = (n, a, b) => n + ' ' + (n === 1 ? a : b);
 
 /* ---------- opslag ---------- */
@@ -114,7 +124,7 @@ function addEntry(item, listId) {
   const e = {
     id: uid(), list: listId, type: item.type, tmdbId: item.tmdbId || 0, title: item.title, year: item.year || '',
     poster: item.poster || '', overview: item.overview || '', rating: item.rating || 0, genres: item.genres || [],
-    seen: '', note: '', added: Date.now(), u: Date.now()
+    seen: '', note: '', tags: [], where: [], ns: false, why: '', added: Date.now(), u: Date.now()
   };
   S.entries.push(e); commit(); return e;
 }
@@ -144,7 +154,8 @@ const posterHtml = (it, sz) => it.poster
 function entryRow(e) {
   return '<a class="row" href="#/e/' + e.id + '">' + posterHtml(e) + '<div class="rb"><div class="rt"><b>' + esc(e.title) + '</b>' +
     (e.year ? ' <i>(' + esc(e.year) + ')</i>' : '') + '</div><div class="rg">' + esc((e.genres || []).join(' · ')) + '</div>' +
-    (e.seen ? '<div class="seen">Gezien: ' + fmtDate(e.seen) + '</div>' : '') + '</div></a>';
+    (e.seen ? '<div class="seen">Gezien: ' + fmtDate(e.seen) + '</div>' : '') +
+    (e.list === 'wish' && e.added ? '<div class="since">Op lijst sinds ' + fmtDate(isoOf(e.added)) + ' · ' + ago(e.added) + '</div>' : '') + '</div></a>';
 }
 function entryTile(e) {
   return '<a class="tile" href="#/e/' + e.id + '">' + posterHtml(e, 'w342') + '<span>' + esc(e.title) + '</span>' + (e.seen ? '<span class="done">Gezien</span>' : '') + '</a>';
@@ -177,8 +188,8 @@ function download(name, text, type) {
 }
 const csvCell = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
 function exportCsv(entries, name) {
-  const head = ['Titel', 'Jaar', 'Type', 'Lijst', 'Genres', 'Gezien', 'Beoordeling', 'Notitie'];
-  const rows = entries.map(e => [e.title, e.year, e.type, (listById(e.list) || {}).name, (e.genres || []).join(' - '), e.seen, e.rating, e.note].map(csvCell).join(';'));
+  const head = ['Titel', 'Jaar', 'Type', 'Lijst', 'Genres', 'Gezien', 'Beoordeling', 'Notitie', 'Tags', 'Waar', 'Niet gezien', 'Reden'];
+  const rows = entries.map(e => [e.title, e.year, e.type, (listById(e.list) || {}).name, (e.genres || []).join(' - '), e.seen, e.rating, e.note, (e.tags || []).join(', '), (e.where || []).map(k => (PLAT.find(q => q[0] === k) || [])[1]).join(', '), e.ns ? 'ja' : '', e.why || ''].map(csvCell).join(';'));
   download(name, '﻿' + [head.map(csvCell).join(';')].concat(rows).join('\r\n'), 'text/csv;charset=utf-8');
 }
 
@@ -220,17 +231,20 @@ const cmp = {
 function listItems() {
   const f = V.f, q = V.q.trim().toLowerCase();
   let a = S.entries.filter(e => e.list === V.id);
-  if (q) a = a.filter(e => (e.title + ' ' + (e.genres || []).join(' ')).toLowerCase().includes(q));
+  if (q) a = a.filter(e => (e.title + ' ' + (e.genres || []).join(' ') + ' ' + (e.tags || []).join(' ')).toLowerCase().includes(q));
   if (f.seen === 'seen') a = a.filter(e => e.seen);
   if (f.seen === 'unseen') a = a.filter(e => !e.seen);
   if (f.genre) a = a.filter(e => (e.genres || []).includes(f.genre));
+  if (f.tag) a = a.filter(e => (e.tags || []).includes(f.tag));
+  if (f.plat) a = a.filter(e => (e.where || []).includes(f.plat));
+  if (f.seen === 'ns') a = a.filter(e => e.ns);
   const k = S.settings.sortKey, d = S.settings.sortDir === 'desc' ? -1 : 1;
   a.sort((x, y) => d * (cmp[k] || cmp.title)(x, y) || cmp.title(x, y));
   return a;
 }
 function vList(id) {
   if (!listById(id)) { location.replace('#/l/' + S.lists[0].id); return; }
-  V = { kind: 'list', id, q: '', sq: false, f: { seen: '', genre: '' } };
+  V = { kind: 'list', id, q: '', sq: false, f: { seen: '', genre: '', tag: '', plat: '' } };
   renderList();
 }
 function renderList() {
@@ -243,7 +257,7 @@ function renderList() {
   if (V.sq) { const q = $('#q'); q.focus(); }
 }
 function fillItems() {
-  const a = listItems(), f = V.f, active = f.seen || f.genre;
+  const a = listItems(), f = V.f, active = f.seen || f.genre || f.tag || f.plat;
   let h = active ? '<div class="activef"><span>Filter actief</span><button data-a="clearfilter">Wissen</button></div>' : '';
   if (!a.length) {
     const none = count(V.id) === 0;
@@ -360,13 +374,13 @@ function vEntry(id) {
   if (!e) { location.replace('#/l/' + S.lists[0].id); return; }
   V = { kind: 'det', type: e.type, tmdbId: e.tmdbId, entryId: e.id, err: '' };
   fillDetail();
-  if (e.tmdbId && !e.d && hasKey()) enrich(V);
+  if (e.tmdbId && !(e.d && 'orig' in e.d) && hasKey()) enrich(V);
 }
 function vDetail(type, id) {
   V = { kind: 'det', type, tmdbId: +id, entryId: '', err: '' };
   fillDetail();
   const c = CACHE[type + '-' + id];
-  if (!(c && c.d)) enrich(V);
+  if (!(c && c.d && 'orig' in c.d)) enrich(V);
 }
 function certOf(d, type) {
   const reg = S.settings.region;
@@ -391,7 +405,9 @@ function compact(d, type) {
   const vids = ((d.videos && d.videos.results) || []).filter(v => v.site === 'YouTube' && v.type === 'Trailer');
   const tr = vids.find(v => v.official) || vids[0];
   const col = d.belongs_to_collection;
+  const alt = ((d.alternative_titles && (d.alternative_titles.titles || d.alternative_titles.results)) || []).map(x => x.title).filter(Boolean);
   return {
+    orig: d.original_title || d.original_name || '', alt: [...new Set(alt)].slice(0, 12),
     tagline: d.tagline || '', release: d.release_date || d.first_air_date || '',
     runtime: d.runtime || (d.episode_run_time && d.episode_run_time[0]) || 0,
     seasons: d.number_of_seasons || 0, episodes: d.number_of_episodes || 0, status: d.status || '', cert: certOf(d, type),
@@ -408,7 +424,7 @@ function compact(d, type) {
 async function enrich(my) {
   try {
     await ensureGenres();
-    const extra = my.type === 'movie' ? 'credits,release_dates,videos' : 'credits,content_ratings,videos,external_ids';
+    const extra = my.type === 'movie' ? 'credits,release_dates,videos,alternative_titles' : 'credits,content_ratings,videos,external_ids,alternative_titles';
     const d = await api('/' + my.type + '/' + my.tmdbId, { append_to_response: extra, include_video_language: 'nl,en,null' });
     if (V !== my) return;
     const it = norm(d, my.type), k = my.type + '-' + my.tmdbId;
@@ -451,15 +467,23 @@ function fillDetail() {
     (rating ? '<a class="score" href="https://www.themoviedb.org/' + V.type + '/' + V.tmdbId + '" target="_blank" rel="noopener" aria-label="Open op TMDb"><b>' + Number(rating).toFixed(1).replace('.', ',') + '</b><small>TMDb ›</small></a>' : '') +
     (d && d.imdb ? '<a class="btn sm" href="https://www.imdb.com/title/' + esc(d.imdb) + '/" target="_blank" rel="noopener">IMDb</a>' : '') +
     '</div></div><h1 class="dtitle">' + esc(title) + '</h1>';
+  if (d && d.orig && d.orig.toLowerCase() !== String(title).toLowerCase()) h += '<p class="over otitle">(' + esc(d.orig) + ')</p>';
   const tag = (d && d.tagline) || c.tagline;
   if (tag) h += '<p class="over small" style="font-style:italic;margin-top:0">' + esc(tag) + '</p>';
   if (V.err && V.err !== 'GEEN_SLEUTEL') h += '<p class="over small">' + esc(V.err) + '</p>';
   if (e) {
     h += '<section class="panel2"><h2>In mijn collectie</h2>' +
       '<label class="fld">Lijst<select id="e-list" class="in" data-in="elist">' + S.lists.map(l => '<option value="' + l.id + '"' + (l.id === e.list ? ' selected' : '') + '>' + esc(l.name) + '</option>').join('') + '</select></label>' +
-      '<label class="chk"><input type="checkbox" data-in="eseen"' + (e.seen ? ' checked' : '') + '> Gezien</label>' +
+      '<div class="chkrow"><label class="chk"><input type="checkbox" data-in="eseen"' + (e.seen ? ' checked' : '') + '> Gezien</label>' +
+      PLAT.map(q => '<label class="chk"><input type="checkbox" data-in="eplat" data-k="' + q[0] + '"' + ((e.where || []).includes(q[0]) ? ' checked' : '') + '> ' + q[1] + '</label>').join('') +
+      '<label class="chk"><input type="checkbox" data-in="ens"' + (e.ns ? ' checked' : '') + '> Niet gezien</label></div>' +
+      (e.ns ? '<label class="fld">Waarom niet gezien?<input class="in" data-in="ewhy" value="' + esc(e.why || '') + '" placeholder="Bijvoorbeeld: geen interesse, te eng"></label>' : '') +
       (e.seen ? '<label class="fld">Datum gezien<input type="date" class="in" value="' + esc(e.seen) + '" max="' + today() + '" data-in="edate"></label>' : '') +
+      '<div class="fld">Tags<div class="chips">' + (e.tags || []).map(t => '<button class="chip tag" data-a="deltag" data-t="' + esc(t) + '" aria-label="Tag ' + esc(t) + ' verwijderen">' + esc(t) + ' ×</button>').join('') + '</div>' +
+      '<div class="tagadd"><input id="tagin" class="in" placeholder="Nieuwe tag" autocapitalize="off"><button class="btn" data-a="addtag">Toevoegen</button></div></div>' +
+      '<label class="fld">Toegevoegd op<input type="date" class="in" value="' + esc(isoOf(e.added || Date.now())) + '" max="' + today() + '" data-in="eadded"></label>' +
       '<label class="fld">Notitie<textarea class="in" data-in="enote" placeholder="Bijvoorbeeld: wil ik met Sam kijken">' + esc(e.note) + '</textarea></label>' +
+      '<button class="btn" data-a="editdata">Gegevens bewerken</button>' +
       '<button class="btn bad" data-a="delentry">Verwijderen uit collectie</button></section>';
   } else {
     const own = S.entries.filter(x => x.type === V.type && x.tmdbId === V.tmdbId);
@@ -475,6 +499,11 @@ function fillDetail() {
     h += dsec2('Eerste uitzending', esc(rel), 'Seizoenen', esc(seasons));
   } else {
     h += dsec2('Verschijningsdatum', esc(rel), 'Speelduur', d && d.runtime ? d.runtime + ' min' : '--');
+  }
+  if (d && d.alt && d.alt.length) {
+    const seenT = new Set([String(title).toLowerCase(), String(d.orig || '').toLowerCase()]);
+    const others = d.alt.filter(x => { const k = x.toLowerCase(); if (seenT.has(k)) return false; seenT.add(k); return true; }).slice(0, 6);
+    if (others.length) h += dsec('Andere titels', others.map(x => esc(x)).join('<br>'));
   }
   if (g('genres').length) h += dsec('Genre', esc(g('genres').join(' - ')));
   if (g('overview')) h += dsec('Beschrijving', esc(g('overview')));
@@ -549,6 +578,7 @@ function cleanEntry(x) {
     id: String(x.id || uid()), list: String(x.list || ''), type: x.type === 'tv' ? 'tv' : 'movie', tmdbId: +x.tmdbId || 0,
     title: String(x.title || ''), year: String(x.year || ''), poster: String(x.poster || ''), overview: String(x.overview || ''), rating: +x.rating || 0,
     genres: Array.isArray(x.genres) ? x.genres.map(String) : [], seen: String(x.seen || ''), note: String(x.note || ''),
+    tags: Array.isArray(x.tags) ? x.tags.map(String).filter(Boolean) : [], where: Array.isArray(x.where) ? x.where.map(String).filter(k => PLAT.some(q => q[0] === k)) : [], ns: !!x.ns, why: String(x.why || ''),
     added: +x.added || Date.now(), u: +x.u || 0
   };
 }
@@ -626,8 +656,11 @@ function sheetSort() {
 function sheetFilter() {
   const genres = [...new Set(S.entries.filter(e => e.list === V.id).flatMap(e => e.genres || []))].sort((a, b) => a.localeCompare(b, 'nl'));
   const f = V.f;
+  const tags = [...new Set(S.entries.filter(e => e.list === V.id).flatMap(e => e.tags || []))].sort((a, b) => a.localeCompare(b, 'nl'));
   openSheet('<h3>Filteren</h3>' +
-    '<label class="fld">Gezien<select class="in" data-in="fseen"><option value="">Alles</option><option value="seen"' + (f.seen === 'seen' ? ' selected' : '') + '>Gezien</option><option value="unseen"' + (f.seen === 'unseen' ? ' selected' : '') + '>Nog niet gezien</option></select></label>' +
+    '<label class="fld">Gezien<select class="in" data-in="fseen"><option value="">Alles</option><option value="seen"' + (f.seen === 'seen' ? ' selected' : '') + '>Gezien</option><option value="unseen"' + (f.seen === 'unseen' ? ' selected' : '') + '>Nog niet gezien</option><option value="ns"' + (f.seen === 'ns' ? ' selected' : '') + '>Bewust niet gezien</option></select></label>' +
+    '<label class="fld">Waar te zien<select class="in" data-in="fplat"><option value="">Overal</option>' + PLAT.map(q => '<option value="' + q[0] + '"' + (f.plat === q[0] ? ' selected' : '') + '>' + q[1] + '</option>').join('') + '</select></label>' +
+    '<label class="fld">Tag<select class="in" data-in="ftag"><option value="">Alle tags</option>' + tags.map(x => '<option' + (f.tag === x ? ' selected' : '') + '>' + esc(x) + '</option>').join('') + '</select></label>' +
     '<label class="fld">Genre<select class="in" data-in="fgenre"><option value="">Alle genres</option>' + genres.map(x => '<option' + (f.genre === x ? ' selected' : '') + '>' + esc(x) + '</option>').join('') + '</select></label>' +
     '<div class="cols"><button class="btn ghost" data-a="clearfilter">Wissen</button><button class="btn pri" data-a="closesheet">Klaar</button></div>');
 }
@@ -770,7 +803,7 @@ const A = {
   view: (d) => { S.settings.view = d.v; save(); renderList(); },
   togglesearch: () => { V.sq = !V.sq; if (!V.sq) { V.q = ''; if (V.kind === 'pub') { pubSearchReset(); return; } } if (V.kind === 'pub') renderPub(); else renderList(); },
   sheetfilter: sheetFilter, sheetsort: sheetSort, sheetmore: sheetMore,
-  clearfilter: () => { V.f = { seen: '', genre: '' }; closeSheet(); fillItems(); },
+  clearfilter: () => { V.f = { seen: '', genre: '', tag: '', plat: '' }; closeSheet(); fillItems(); },
   setsort: d => { S.settings.sortKey = d.k; save(); sheetSort(); if (V.kind === 'list') fillItems(); },
   setdir: d => { S.settings.sortDir = d.d; save(); sheetSort(); if (V.kind === 'list') fillItems(); },
   add: () => { location.hash = '#/toevoegen/' + V.id; },
@@ -789,6 +822,39 @@ const A = {
       if (navigator.share) await navigator.share({ title, url });
       else { await navigator.clipboard.writeText(url); toast('Link gekopieerd'); }
     } catch (err) { /* geannuleerd */ }
+  },
+  saveseen: () => {
+    const e = S.entries.find(x => x.id === V.entryId), v = $('#sd') && $('#sd').value;
+    if (!e) return;
+    if (!v) { toast('Kies een datum'); return; }
+    e.seen = v; e.ns = false; e.u = Date.now(); commit(); closeSheet(); fillDetail();
+  },
+  addtag: () => {
+    const e = S.entries.find(x => x.id === V.entryId), inp = $('#tagin');
+    if (!e || !inp) return;
+    const t = inp.value.trim().replace(/\s+/g, ' ');
+    if (!t) return;
+    e.tags = e.tags || [];
+    if (!e.tags.some(x => x.toLowerCase() === t.toLowerCase())) { e.tags.push(t); e.u = Date.now(); commit(); }
+    fillDetail(); const n = $('#tagin'); if (n) n.focus();
+  },
+  deltag: d => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.tags = (e.tags || []).filter(x => x !== d.t); e.u = Date.now(); commit(); fillDetail(); } },
+  editdata: () => {
+    const e = S.entries.find(x => x.id === V.entryId); if (!e) return;
+    openSheet('<h3>Gegevens bewerken</h3>' +
+      '<label class="fld">Titel<input id="ed-title" class="in" value="' + esc(e.title) + '"></label>' +
+      '<label class="fld">Jaar<input id="ed-year" class="in" inputmode="numeric" value="' + esc(e.year) + '"></label>' +
+      '<label class="fld">Genres (met komma ertussen)<input id="ed-genres" class="in" value="' + esc((e.genres || []).join(', ')) + '"></label>' +
+      '<label class="fld">Beschrijving<textarea id="ed-over" class="in" style="min-height:140px">' + esc(e.overview) + '</textarea></label>' +
+      '<div class="cols"><button class="btn ghost" data-a="closesheet">Annuleren</button><button class="btn pri" data-a="saveedit">Opslaan</button></div>');
+  },
+  saveedit: () => {
+    const e = S.entries.find(x => x.id === V.entryId); if (!e) return;
+    const t = $('#ed-title').value.trim();
+    if (!t) { toast('Een titel is nodig'); return; }
+    e.title = t; e.year = $('#ed-year').value.trim(); e.overview = $('#ed-over').value.trim();
+    e.genres = $('#ed-genres').value.split(',').map(x => x.trim()).filter(Boolean);
+    e.u = Date.now(); commit(); closeSheet(); fillDetail(); toast('Opgeslagen');
   },
   syncnow: () => { if (!syncOn()) { toast('Vul eerst je toegangscode in'); return; } syncNow(false); },
   savenew: () => {
@@ -841,8 +907,21 @@ const IN = {
   aq: el => { V.q = el.value; addSearch(); },
   fseen: el => { V.f.seen = el.value; fillItems(); },
   fgenre: el => { V.f.genre = el.value; fillItems(); },
+  ftag: el => { V.f.tag = el.value; fillItems(); },
+  fplat: el => { V.f.plat = el.value; fillItems(); },
   elist: el => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.list = el.value; e.u = Date.now(); commit(); toast('Verplaatst naar ' + listById(el.value).name); } },
-  eseen: el => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.seen = el.checked ? today() : ''; e.u = Date.now(); commit(); fillDetail(); } },
+  eseen: el => {
+    const e = S.entries.find(x => x.id === V.entryId); if (!e) return;
+    if (el.checked) {
+      openSheet('<h3>Wanneer heb je het gezien?</h3><label class="fld">Datum gezien<input id="sd" type="date" class="in" value="' + today() + '" max="' + today() + '"></label>' +
+        '<div class="cols"><button class="btn ghost" data-a="closesheet">Annuleren</button><button class="btn pri" data-a="saveseen">Opslaan</button></div>');
+      fillDetail();
+    } else { e.seen = ''; e.u = Date.now(); commit(); fillDetail(); }
+  },
+  eadded: el => { const e = S.entries.find(x => x.id === V.entryId); if (e && el.value) { e.added = new Date(el.value + 'T12:00:00').getTime(); e.u = Date.now(); commit(); } },
+  ens: el => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.ns = el.checked; if (el.checked) e.seen = ''; e.u = Date.now(); commit(); fillDetail(); } },
+  ewhy: el => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.why = el.value; e.u = Date.now(); commit(); } },
+  eplat: el => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; const w = new Set(e.where || []); if (el.checked) w.add(el.dataset.k); else w.delete(el.dataset.k); e.where = [...w]; e.u = Date.now(); commit(); },
   edate: el => { const e = S.entries.find(x => x.id === V.entryId); if (e && el.value) { e.seen = el.value; e.u = Date.now(); commit(); } },
   enote: el => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.note = el.value; e.u = Date.now(); commit(); } },
   rename: el => { const l = listById(el.dataset.l); if (l && el.value.trim()) { l.name = el.value.trim(); l.u = Date.now(); commit(); } },
@@ -864,6 +943,7 @@ document.addEventListener('click', ev => {
   const f = A[a.dataset.a];
   if (f) f(a.dataset, a, ev);
 });
+document.addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target && ev.target.id === 'tagin') { ev.preventDefault(); A.addtag(); } });
 document.addEventListener('input', ev => {
   const el = ev.target.closest('[data-in]');
   if (el && IN[el.dataset.in]) IN[el.dataset.in](el);
