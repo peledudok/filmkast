@@ -32,7 +32,9 @@ const DEF = () => ({
   ],
   entries: [],
   settings: { apiKey: '', lang: 'nl-NL', region: 'NL', view: 'list', sortKey: 'title', sortDir: 'asc', accent: ACCENTS[0] },
-  genres: { movie: {}, tv: {} }
+  genres: { movie: {}, tv: {} },
+  del: {},
+  delLists: {}
 });
 function load() {
   try {
@@ -40,6 +42,8 @@ function load() {
     if (d && Array.isArray(d.entries) && Array.isArray(d.lists) && d.lists.length) {
       d.settings = Object.assign(DEF().settings, d.settings || {});
       d.genres = d.genres || { movie: {}, tv: {} };
+      d.del = d.del || {};
+      d.delLists = d.delLists || {};
       const music = d.lists.filter(l => l.kind === 'music').map(l => l.id);
       if (music.length && d.lists.length > music.length) {
         d.lists = d.lists.filter(l => l.kind !== 'music');
@@ -55,6 +59,7 @@ function save() {
   try { localStorage.setItem(KEY, JSON.stringify(S)); }
   catch (e) { toast('Opslaan lukt niet. Is de opslag vol of geblokkeerd?'); }
 }
+function commit() { save(); scheduleSync(); }
 const listById = id => S.lists.find(l => l.id === id);
 const count = id => S.entries.filter(e => e.list === id).length;
 
@@ -109,9 +114,9 @@ function addEntry(item, listId) {
   const e = {
     id: uid(), list: listId, type: item.type, tmdbId: item.tmdbId || 0, title: item.title, year: item.year || '',
     poster: item.poster || '', overview: item.overview || '', rating: item.rating || 0, genres: item.genres || [],
-    seen: '', note: '', added: Date.now()
+    seen: '', note: '', added: Date.now(), u: Date.now()
   };
-  S.entries.push(e); save(); return e;
+  S.entries.push(e); commit(); return e;
 }
 
 /* ---------- weergave-hulpjes ---------- */
@@ -122,7 +127,8 @@ const I = {
   sort: '<path d="M3 6h18M3 12h12M3 18h6"/>',
   more: '<circle cx="12" cy="5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="19" r="1.4"/>',
   back: '<path d="M19 12H5m6-6-6 6 6 6"/>',
-  plus: '<path d="M12 5v14M5 12h14"/>'
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/>'
 };
 const ico = n => '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + I[n] + '</svg>';
 function bar(o) {
@@ -197,7 +203,7 @@ function route() {
   const p = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent);
   closeDrawer(); closeSheet(); if (IO) { IO.disconnect(); IO = null; }
   window.scrollTo(0, 0);
-  const views = { l: vList, p: vPublic, e: vEntry, d: vDetail, beheer: vManage, instellingen: vSettings, backup: vBackup, over: vAbout, toevoegen: vAdd, nieuw: vNew };
+  const views = { l: vList, p: vPublic, e: vEntry, d: vDetail, beheer: vManage, instellingen: vSettings, backup: vBackup, over: vAbout, toevoegen: vAdd, nieuw: vNew, c: vCollection };
   const f = views[p[0]];
   if (!f) { location.replace('#/l/' + S.lists[0].id); return; }
   f(p[1], p[2]);
@@ -344,35 +350,79 @@ function vNew(listId) {
 }
 
 /* detail */
+const hasKey = () => !!(S.settings.apiKey || BAKED_KEY || '').trim();
+const money = n => n ? new Intl.NumberFormat('nl-NL').format(n) + ' USD' : '--';
+const dsec = (label, html) => '<section class="dsec"><h2>' + label + '</h2><div class="dv">' + html + '</div></section>';
+const dsec2 = (l1, v1, l2, v2) => '<section class="dsec two"><div><h2>' + l1 + '</h2><div class="dv">' + v1 + '</div></div><div><h2>' + l2 + '</h2><div class="dv">' + v2 + '</div></div></section>';
+
 function vEntry(id) {
   const e = S.entries.find(x => x.id === id);
   if (!e) { location.replace('#/l/' + S.lists[0].id); return; }
   V = { kind: 'det', type: e.type, tmdbId: e.tmdbId, entryId: e.id, err: '' };
   fillDetail();
-  if (e.tmdbId && (S.settings.apiKey || BAKED_KEY || '').trim()) enrich(V);
+  if (e.tmdbId && !e.d && hasKey()) enrich(V);
 }
 function vDetail(type, id) {
   V = { kind: 'det', type, tmdbId: +id, entryId: '', err: '' };
   fillDetail();
-  if (!CACHE[type + '-' + id] || !CACHE[type + '-' + id].runtime) enrich(V);
+  const c = CACHE[type + '-' + id];
+  if (!(c && c.d)) enrich(V);
+}
+function certOf(d, type) {
+  const reg = S.settings.region;
+  if (type === 'movie') {
+    const rs = (d.release_dates && d.release_dates.results) || [];
+    for (const code of [reg, 'US']) {
+      const r = rs.find(x => x.iso_3166_1 === code);
+      const c = r && r.release_dates.map(x => x.certification).find(Boolean);
+      if (c) return c;
+    }
+    return '';
+  }
+  const rs = (d.content_ratings && d.content_ratings.results) || [];
+  for (const code of [reg, 'US']) { const r = rs.find(x => x.iso_3166_1 === code); if (r && r.rating) return r.rating; }
+  return '';
+}
+const countryName = iso => { try { return new Intl.DisplayNames([S.settings.lang], { type: 'region' }).of(iso); } catch (e) { return iso; } };
+function compact(d, type) {
+  const cr = d.credits || {};
+  const crew = cr.crew || [];
+  const prod = [...new Set(crew.filter(p => p.job === 'Producer').map(p => p.name))].slice(0, 6);
+  const vids = ((d.videos && d.videos.results) || []).filter(v => v.site === 'YouTube' && v.type === 'Trailer');
+  const tr = vids.find(v => v.official) || vids[0];
+  const col = d.belongs_to_collection;
+  return {
+    tagline: d.tagline || '', release: d.release_date || d.first_air_date || '',
+    runtime: d.runtime || (d.episode_run_time && d.episode_run_time[0]) || 0,
+    seasons: d.number_of_seasons || 0, episodes: d.number_of_episodes || 0, status: d.status || '', cert: certOf(d, type),
+    backdrop: d.backdrop_path || '', votes: d.vote_count || 0,
+    cast: (cr.cast || []).slice(0, 15).map(p => ({ n: p.name, c: p.character || '', p: p.profile_path || '' })),
+    producers: prod, creators: (d.created_by || []).map(x => x.name), networks: (d.networks || []).map(x => x.name),
+    companies: (d.production_companies || []).map(x => x.name),
+    countries: (d.production_countries || []).map(x => countryName(x.iso_3166_1)),
+    budget: d.budget || 0, revenue: d.revenue || 0,
+    collection: col ? { id: col.id, name: col.name, backdrop: col.backdrop_path || '' } : null,
+    trailer: tr ? tr.key : '', imdb: d.imdb_id || (d.external_ids && d.external_ids.imdb_id) || ''
+  };
 }
 async function enrich(my) {
   try {
     await ensureGenres();
-    const d = await api('/' + my.type + '/' + my.tmdbId);
+    const extra = my.type === 'movie' ? 'credits,release_dates,videos' : 'credits,content_ratings,videos,external_ids';
+    const d = await api('/' + my.type + '/' + my.tmdbId, { append_to_response: extra, include_video_language: 'nl,en,null' });
     if (V !== my) return;
     const it = norm(d, my.type), k = my.type + '-' + my.tmdbId;
+    it.d = compact(d, my.type);
     CACHE[k] = Object.assign(CACHE[k] || {}, it);
     const e = my.entryId && S.entries.find(x => x.id === my.entryId);
     if (e) {
-      let ch = false;
-      if (!e.overview && it.overview) { e.overview = it.overview; ch = true; }
-      if (!(e.genres || []).length && it.genres.length) { e.genres = it.genres; ch = true; }
-      if (!e.poster && it.poster) { e.poster = it.poster; ch = true; }
-      if (!e.rating && it.rating) { e.rating = it.rating; ch = true; }
-      if (ch) save();
+      if (!e.overview && it.overview) e.overview = it.overview;
+      if (!(e.genres || []).length && it.genres.length) e.genres = it.genres;
+      if (!e.poster && it.poster) e.poster = it.poster;
+      if (!e.rating && it.rating) e.rating = it.rating;
+      e.d = it.d; save();
     }
-  } catch (e) { if (V !== my) return; my.err = errMsg(e); }
+  } catch (err) { if (V !== my) return; my.err = errMsg(err); }
   fillDetail();
 }
 function fillDetail() {
@@ -386,13 +436,23 @@ function fillDetail() {
       V.err ? '<div class="notice"><b>API-sleutel nodig</b><span>Vul je TMDb-sleutel in bij Instellingen om deze titel te laden.</span><a class="btn pri" href="#/instellingen">Naar instellingen</a></div>' : '<div class="spin">Laden…</div>');
     return;
   }
-  const meta = [g('year'), c.runtime ? c.runtime + ' min' : '', c.seasons ? plural(c.seasons, 'seizoen', 'seizoenen') : '', g('rating') ? '★ ' + g('rating') : ''].filter(Boolean).join(' · ');
-  let h = bar({ title: V.type === 'tv' ? 'Serie' : 'Film' }) +
-    '<div class="hero">' + posterHtml({ poster: g('poster'), type: V.type }, 'w342') + '<div><h1>' + esc(title) + '</h1><div class="meta">' + esc(meta) + '</div>' +
-    ((g('genres') || []).length ? '<div class="chips">' + g('genres').map(x => '<span class="chip">' + esc(x) + '</span>').join('') + '</div>' : '') +
-    '</div></div>';
-  if (c.tagline) h += '<p class="over small" style="font-style:italic">' + esc(c.tagline) + '</p>';
-  if (g('overview')) h += '<p class="over">' + esc(g('overview')) + '</p>';
+  const d = (e && e.d) || c.d || null;
+  const poster = posterHtml({ poster: g('poster'), type: V.type }, 'w342');
+  const playSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>';
+  const posterBlock = d && d.trailer
+    ? '<a class="pwrap" href="https://www.youtube.com/watch?v=' + esc(d.trailer) + '" target="_blank" rel="noopener" aria-label="Trailer bekijken">' + poster + '<span class="play">' + playSvg + '</span></a>'
+    : poster;
+  const rating = g('rating');
+  let h = '<div class="dhero">' + (d && d.backdrop ? '<img alt="" src="' + IMG + 'w780' + esc(d.backdrop) + '">' : '') +
+    '<div class="dtop"><button class="ib glass" data-a="back" aria-label="Terug">' + ico('back') + '</button>' +
+    (V.tmdbId ? '<button class="ib glass" data-a="share" aria-label="Delen">' + ico('share') + '</button>' : '') + '</div></div>' +
+    '<div class="dmain">' + posterBlock + '<div class="dside">' +
+    (d && d.cert ? '<span class="cert">' + esc(d.cert) + '</span>' : '') +
+    (rating ? '<div class="score"><b>' + Number(rating).toFixed(1).replace('.', ',') + '</b><small>TMDb</small></div>' : '') +
+    (d && d.imdb ? '<a class="btn sm" href="https://www.imdb.com/title/' + esc(d.imdb) + '/" target="_blank" rel="noopener">IMDb</a>' : '') +
+    '</div></div><h1 class="dtitle">' + esc(title) + '</h1>';
+  const tag = (d && d.tagline) || c.tagline;
+  if (tag) h += '<p class="over small" style="font-style:italic;margin-top:0">' + esc(tag) + '</p>';
   if (V.err && V.err !== 'GEEN_SLEUTEL') h += '<p class="over small">' + esc(V.err) + '</p>';
   if (e) {
     h += '<section class="panel2"><h2>In mijn collectie</h2>' +
@@ -409,6 +469,60 @@ function fillDetail() {
       return '<button class="btn wide ' + (has ? 'ghost' : '') + '" data-a="pickdetail" data-l="' + l.id + '"' + (has ? ' disabled' : '') + '>' + esc(l.name) + (has ? ' · staat al in lijst' : '') + '</button>';
     }).join('') + '</div></section>';
   }
+  const rel = d && d.release ? fmtDate(d.release) : (g('year') || '--');
+  if (V.type === 'tv') {
+    const seasons = d && d.seasons ? plural(d.seasons, 'seizoen', 'seizoenen') + (d.episodes ? ' · ' + d.episodes + ' afl.' : '') : '--';
+    h += dsec2('Eerste uitzending', esc(rel), 'Seizoenen', esc(seasons));
+  } else {
+    h += dsec2('Verschijningsdatum', esc(rel), 'Speelduur', d && d.runtime ? d.runtime + ' min' : '--');
+  }
+  if (g('genres').length) h += dsec('Genre', esc(g('genres').join(' - ')));
+  if (g('overview')) h += dsec('Beschrijving', esc(g('overview')));
+  if (d && d.cast.length) {
+    h += '<section class="dsec"><h2>Acteurs</h2><div class="cast">' + d.cast.map(p => '<div class="cm">' +
+      (p.p ? '<img loading="lazy" alt="" src="' + IMG + 'w185' + esc(p.p) + '">' : '<div class="ph"></div>') +
+      '<b>' + esc(p.n) + '</b><span>' + esc(p.c) + '</span></div>').join('') + '</div></section>';
+  }
+  if (d) {
+    if (V.type === 'movie' && d.producers.length) h += dsec('Producenten', esc(d.producers.join(', ')));
+    if (V.type === 'tv' && d.creators.length) h += dsec('Makers', esc(d.creators.join(', ')));
+    if (V.type === 'tv' && d.networks.length) h += dsec('Netwerk', esc(d.networks.join(', ')));
+    if (d.companies.length) h += dsec('Productiebedrijven', d.companies.map(x => esc(x)).join('<br>'));
+    if (d.countries.length) h += dsec('Land', esc(d.countries.join(', ')));
+    if (V.type === 'movie') h += dsec2('Productiekosten', money(d.budget), 'Opbrengst', money(d.revenue));
+    if (d.collection) {
+      h += '<a class="coll" href="#/c/' + d.collection.id + '">' +
+        (d.collection.backdrop ? '<img alt="" loading="lazy" src="' + IMG + 'w780' + esc(d.collection.backdrop) + '">' : '') +
+        '<span>' + esc(d.collection.name) + '</span></a>';
+    }
+  } else if (hasKey() && !V.err) h += '<div class="spin">Meer gegevens laden…</div>';
+  h += '<div style="height:40px"></div>';
+  const keep = window.scrollY;
+  app.innerHTML = h;
+  window.scrollTo(0, keep);
+}
+
+/* collectie */
+async function vCollection(id) {
+  V = { kind: 'coll', id: +id, d: null, parts: [], err: '' };
+  const my = V;
+  renderColl();
+  try {
+    await ensureGenres();
+    const d = await api('/collection/' + id);
+    if (V !== my) return;
+    my.d = d;
+    my.parts = (d.parts || []).slice().sort((a, b) => (a.release_date || '9').localeCompare(b.release_date || '9')).map(p => cache(norm(p, 'movie')));
+  } catch (err) { if (V !== my) return; my.err = errMsg(err); }
+  renderColl();
+}
+function renderColl() {
+  const n = V.parts.length;
+  let h = bar({ title: V.d ? V.d.name : 'Collectie', sub: V.d ? plural(n, 'film', 'films') : '' });
+  if (V.err === 'GEEN_SLEUTEL') h += '<div class="notice"><b>API-sleutel nodig</b><a class="btn pri" href="#/instellingen">Naar instellingen</a></div>';
+  else if (V.err) h += '<div class="notice">' + esc(V.err) + '</div>';
+  else if (!V.d) h += '<div class="spin">Laden…</div>';
+  else h += (V.d.overview ? '<p class="over">' + esc(V.d.overview) + '</p>' : '') + '<div class="rows">' + V.parts.map(it => tmdbRow(it)).join('') + '</div>';
   app.innerHTML = h;
 }
 
@@ -430,6 +544,14 @@ function vBackup() {
     '<section class="panel2"><h2>Back-up terugzetten</h2><p class="small" style="margin:0">Kies een eerder opgeslagen back-up (.json). Je kiest daarna of je samenvoegt of vervangt.</p>' +
     '<label class="btn" for="imp">Bestand kiezen</label><input id="imp" type="file" accept=".json,application/json" data-in="import" hidden></section>';
 }
+function cleanEntry(x) {
+  return {
+    id: String(x.id || uid()), list: String(x.list || ''), type: x.type === 'tv' ? 'tv' : 'movie', tmdbId: +x.tmdbId || 0,
+    title: String(x.title || ''), year: String(x.year || ''), poster: String(x.poster || ''), overview: String(x.overview || ''), rating: +x.rating || 0,
+    genres: Array.isArray(x.genres) ? x.genres.map(String) : [], seen: String(x.seen || ''), note: String(x.note || ''),
+    added: +x.added || Date.now(), u: +x.u || 0
+  };
+}
 let PENDING = null;
 function readImport(file) {
   const fr = new FileReader();
@@ -438,13 +560,8 @@ function readImport(file) {
       const d = JSON.parse(fr.result);
       if (!d || !Array.isArray(d.entries)) throw new Error('x');
       const skip = (Array.isArray(d.lists) ? d.lists : []).filter(l => l && l.kind === 'music').map(l => String(l.id));
-      const entries = d.entries.filter(x => x && typeof x.title === 'string' && x.type !== 'music' && !skip.includes(String(x.list))).map(x => ({
-        id: x.id || uid(), list: String(x.list || ''), type: x.type === 'tv' ? 'tv' : 'movie', tmdbId: +x.tmdbId || 0,
-        title: x.title, year: String(x.year || ''), poster: String(x.poster || ''), overview: String(x.overview || ''), rating: +x.rating || 0,
-        genres: Array.isArray(x.genres) ? x.genres.map(String) : [], seen: String(x.seen || ''),
-        note: String(x.note || ''), added: +x.added || Date.now()
-      }));
-      const lists = Array.isArray(d.lists) ? d.lists.filter(l => l && l.id && l.name && l.kind !== 'music').map(l => ({ id: String(l.id), name: String(l.name), kind: l.kind })) : [];
+      const entries = d.entries.filter(x => x && typeof x.title === 'string' && x.type !== 'music' && !skip.includes(String(x.list))).map(cleanEntry);
+      const lists = Array.isArray(d.lists) ? d.lists.filter(l => l && l.id && l.name && l.kind !== 'music').map(l => ({ id: String(l.id), name: String(l.name), kind: l.kind, u: Date.now() })) : [];
       PENDING = { entries, lists };
       openSheet('<h3>Back-up gevonden</h3><p>' + plural(entries.length, 'titel', 'titels') + ' in ' + plural(lists.length || 0, 'lijst', 'lijsten') + '.</p>' +
         '<div class="stack"><button class="btn pri" data-a="doimport" data-m="merge">Samenvoegen met wat ik heb</button><button class="btn bad" data-a="doimport" data-m="replace">Alles vervangen</button><button class="btn ghost" data-a="closesheet">Annuleren</button></div>');
@@ -456,16 +573,20 @@ function doImport(mode) {
   if (!PENDING) return;
   const P = PENDING; PENDING = null;
   if (mode === 'replace') {
-    if (P.lists.length) S.lists = P.lists;
+    if (P.lists.length) {
+      S.lists.forEach(l => { if (!P.lists.some(q => q.id === l.id)) S.delLists[l.id] = Date.now(); });
+      S.lists = P.lists;
+    }
+    S.entries.forEach(e => { S.del[e.id] = Date.now(); });
     S.entries = [];
   } else P.lists.forEach(l => { if (!listById(l.id)) S.lists.push(l); });
   let added = 0;
   P.entries.forEach(x => {
     if (!listById(x.list)) x.list = S.lists[0].id;
     const dup = S.entries.some(e => e.id === x.id || (e.list === x.list && e.type === x.type && (x.tmdbId ? e.tmdbId === x.tmdbId : e.title === x.title && e.year === x.year)));
-    if (!dup) { S.entries.push(x); added++; }
+    if (!dup) { x.u = Date.now(); S.entries.push(x); added++; }
   });
-  save(); closeSheet(); toast(plural(added, 'titel', 'titels') + ' hersteld'); vBackup();
+  commit(); closeSheet(); toast(plural(added, 'titel', 'titels') + ' hersteld'); vBackup();
 }
 
 /* instellingen */
@@ -479,6 +600,7 @@ function vSettings() {
     '<button class="btn" data-a="testkey">Sleutel testen</button>' +
     '<label class="fld">Taal van titels en beschrijvingen<select class="in" data-in="lang">' + [['nl-NL', 'Nederlands'], ['en-US', 'English']].map(o => '<option value="' + o[0] + '"' + (s.lang === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label>' +
     '<label class="fld">Regio voor bioscooplijsten<select class="in" data-in="region">' + [['NL', 'Nederland'], ['BE', 'België'], ['DE', 'Duitsland'], ['GB', 'Verenigd Koninkrijk'], ['US', 'Verenigde Staten']].map(o => '<option value="' + o[0] + '"' + (s.region === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label></section>' +
+    syncSection() +
     '<section class="panel2"><h2>Sorteren</h2>' + sortFields() + '</section>' +
     '<section class="panel2"><h2>Uiterlijk</h2><div class="fld">Accentkleur</div><div class="sw">' + ACCENTS.map(a => '<button style="background:' + a + '" class="' + (s.accent === a ? 'on' : '') + '" data-a="accent" data-c="' + a + '" aria-label="Kleur ' + a + '"></button>').join('') + '</div></section>' +
     '<section class="panel2"><h2>Info</h2><a class="link" href="#/over">Over Filmkast</a></section>';
@@ -519,7 +641,126 @@ function sheetPick(k) {
     return '<button class="btn wide ' + (has ? 'ghost' : '') + '" data-a="pick" data-k="' + k + '" data-l="' + l.id + '"' + (has ? ' disabled' : '') + '>' + esc(l.name) + (has ? ' · staat al in lijst' : '') + '</button>';
   }).join('') + '</div>');
 }
-function refreshRows() { if (V.kind === 'add') fillAdd(); else if (V.kind === 'pub') fillPub(); }
+function refreshRows() { if (V.kind === 'add') fillAdd(); else if (V.kind === 'pub') fillPub(); else if (V.kind === 'coll') renderColl(); }
+
+/* ---------- synchroniseren (geheime GitHub Gist) ---------- */
+const GIST_DESC = 'Filmkast sync', GIST_FILE = 'filmkast.json';
+let syncing = false, syncT = 0, lastSync = +(S.settings.lastSync || 0);
+const syncOn = () => !!(S.settings.syncToken || '').trim();
+function scheduleSync() {
+  if (!syncOn() || syncing) return;
+  clearTimeout(syncT);
+  syncT = setTimeout(() => syncNow(true), 4000);
+}
+function syncText() {
+  if (!syncOn()) return 'Niet ingesteld.';
+  return S.settings.lastSync
+    ? 'Laatst gesynchroniseerd: ' + new Date(+S.settings.lastSync).toLocaleString('nl-NL', { dateStyle: 'short', timeStyle: 'short' })
+    : 'Nog niet gesynchroniseerd.';
+}
+function setSyncStatus(t) { const el = $('#syncstat'); if (el) el.textContent = t; }
+function syncSection() {
+  return '<section class="panel2"><h2>Synchroniseren</h2>' +
+    '<p class="small" style="margin:0">Houd je computer en telefoon gelijk via een geheim bestand (Gist) op je eigen GitHub-account. Vul op elk apparaat dezelfde toegangscode in.</p>' +
+    '<label class="fld">GitHub-toegangscode<input id="synctoken" class="in" value="' + esc(S.settings.syncToken || '') + '" data-in="synctoken" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ghp_…"></label>' +
+    '<button class="btn" data-a="syncnow">Nu synchroniseren</button>' +
+    '<p class="small" id="syncstat" style="margin:0">' + esc(syncText()) + '</p>' +
+    '<details class="how"><summary>Zo maak je de toegangscode</summary><ol>' +
+    '<li>Ga op github.com naar je profielfoto en kies <b>Settings</b>.</li>' +
+    '<li>Kies onderaan links <b>Developer settings</b>, dan <b>Personal access tokens</b>, dan <b>Tokens (classic)</b>.</li>' +
+    '<li>Kies <b>Generate new token</b> en dan <b>Generate new token (classic)</b>.</li>' +
+    '<li>Noem hem "Filmkast", kies bij Expiration <b>No expiration</b> en vink alleen <b>gist</b> aan.</li>' +
+    '<li>Klik onderaan op <b>Generate token</b>, kopieer de code (begint met ghp_) en plak hem hierboven.</li></ol></details></section>';
+}
+async function gh(path, opt) {
+  opt = opt || {};
+  const headers = { Authorization: 'Bearer ' + S.settings.syncToken.trim(), Accept: 'application/vnd.github+json' };
+  if (opt.body) headers['Content-Type'] = 'application/json';
+  const r = await fetch('https://api.github.com' + path, { method: opt.method || 'GET', headers, body: opt.body ? JSON.stringify(opt.body) : undefined });
+  if (r.status === 401 || r.status === 403) throw new Error('SYNC_AUTH');
+  if (!r.ok) throw new Error('SYNC_HTTP_' + r.status);
+  return r.json();
+}
+async function findGist() {
+  if (S.settings.gistId) return S.settings.gistId;
+  const list = await gh('/gists?per_page=100');
+  const g = list.find(x => x.description === GIST_DESC && x.files && x.files[GIST_FILE]);
+  return g ? g.id : '';
+}
+const maxMap = (a, b) => { const o = Object.assign({}, a || {}); for (const k in (b || {})) o[k] = Math.max(o[k] || 0, b[k]); return o; };
+function payload() { return { app: 'filmkast', v: 2, lists: S.lists, entries: S.entries.map(cleanEntry), del: S.del, delLists: S.delLists }; }
+const fp = o => JSON.stringify([
+  (o.entries || []).map(e => e.id + ':' + (e.u || 0)).sort(),
+  (o.lists || []).map(l => l.id + ':' + l.name + ':' + (l.u || 0)).sort(),
+  Object.keys(o.del || {}).sort(), Object.keys(o.delLists || {}).sort()
+]);
+function mergeData(R) {
+  const del = maxMap(S.del, R.del), delL = maxMap(S.delLists, R.delLists);
+  const rLists = (R.lists || []).filter(l => l && l.id && l.name).map(l => ({ id: String(l.id), name: String(l.name), kind: l.kind, u: +l.u || 0 }));
+  const lm = new Map();
+  S.lists.concat(rLists).forEach(l => { const o = lm.get(l.id); if (!o || (l.u || 0) > (o.u || 0)) lm.set(l.id, l); });
+  const order = [...new Set(S.lists.map(l => l.id).concat(rLists.map(l => l.id)))];
+  let lists = order.filter(id => !(delL[id] && delL[id] > (lm.get(id).u || 0))).map(id => lm.get(id));
+  if (!lists.length) lists = [DEF().lists[0]];
+  const em = new Map();
+  S.entries.concat((R.entries || []).filter(x => x && typeof x.title === 'string' && x.title).map(cleanEntry)).forEach(e => {
+    const o = em.get(e.id);
+    if (!o) { em.set(e.id, e); return; }
+    if ((e.u || 0) > (o.u || 0)) { if (o.d && !e.d) e.d = o.d; em.set(e.id, e); }
+    else if (e.d && !o.d) o.d = e.d;
+  });
+  const entries = [...em.values()].filter(e => !(del[e.id] && del[e.id] >= (e.u || 0)) && lists.some(l => l.id === e.list));
+  return { lists, entries, del, delLists: delL };
+}
+function syncErr(e) {
+  const m = e && e.message || '';
+  if (m === 'SYNC_AUTH') return 'GitHub weigert de toegangscode. Controleer of hij klopt, niet verlopen is en het recht "gist" heeft.';
+  if (m.startsWith('SYNC_HTTP_')) return 'GitHub gaf een fout (' + m.slice(10) + '). Probeer het later opnieuw.';
+  return 'Geen verbinding met GitHub.';
+}
+async function syncNow(auto) {
+  if (!syncOn() || syncing) return;
+  syncing = true; clearTimeout(syncT);
+  setSyncStatus('Bezig met synchroniseren…');
+  try {
+    let id = await findGist(), R = null;
+    if (id) {
+      const g = await gh('/gists/' + id);
+      const f = g.files && g.files[GIST_FILE];
+      if (f) {
+        let txt = f.content;
+        if (f.truncated) txt = await (await fetch(f.raw_url)).text();
+        try { R = JSON.parse(txt); } catch (err) { R = null; }
+      }
+    }
+    let changed = false;
+    if (R && Array.isArray(R.entries)) {
+      const before = fp({ entries: S.entries, lists: S.lists, del: S.del, delLists: S.delLists });
+      const m = mergeData(R);
+      S.lists = m.lists; S.entries = m.entries; S.del = m.del; S.delLists = m.delLists;
+      changed = fp(m) !== before;
+    }
+    const out = payload();
+    if (!id) {
+      const g = await gh('/gists', { method: 'POST', body: { description: GIST_DESC, public: false, files: { [GIST_FILE]: { content: JSON.stringify(out) } } } });
+      id = g.id;
+    } else if (!R || !Array.isArray(R.entries) || fp(R) !== fp(out)) {
+      await gh('/gists/' + id, { method: 'PATCH', body: { files: { [GIST_FILE]: { content: JSON.stringify(out) } } } });
+    }
+    S.settings.gistId = id; lastSync = Date.now(); S.settings.lastSync = lastSync; save();
+    setSyncStatus(syncText());
+    if (changed) {
+      if (V.kind === 'list') { if (V.sq) fillItems(); else renderList(); }
+      else if (V.kind === 'det' && V.entryId) fillDetail();
+    }
+    if (!auto) toast('Gesynchroniseerd');
+  } catch (e) {
+    const m = syncErr(e);
+    setSyncStatus(m);
+    if (!auto) toast(m);
+  }
+  syncing = false;
+}
 
 /* ---------- gebeurtenissen ---------- */
 const A = {
@@ -539,6 +780,17 @@ const A = {
   pick: d => { const e = addEntry(CACHE[d.k], d.l); if (e) { toast('Toegevoegd aan ' + listById(d.l).name); closeSheet(); refreshRows(); } },
   pickdetail: d => { const e = addEntry(CACHE[V.type + '-' + V.tmdbId], d.l); if (e) { toast('Toegevoegd aan ' + listById(d.l).name); location.replace('#/e/' + e.id); } },
   retry: () => { V.err = ''; loadMore(); },
+  share: async () => {
+    const c = CACHE[V.type + '-' + V.tmdbId] || {};
+    const e = V.entryId && S.entries.find(x => x.id === V.entryId);
+    const title = (e && e.title) || c.title || 'Titel';
+    const url = 'https://www.themoviedb.org/' + V.type + '/' + V.tmdbId;
+    try {
+      if (navigator.share) await navigator.share({ title, url });
+      else { await navigator.clipboard.writeText(url); toast('Link gekopieerd'); }
+    } catch (err) { /* geannuleerd */ }
+  },
+  syncnow: () => { if (!syncOn()) { toast('Vul eerst je toegangscode in'); return; } syncNow(false); },
   savenew: () => {
     const title = $('#n-title').value.trim();
     if (!title) { toast('Vul een titel in'); return; }
@@ -548,22 +800,27 @@ const A = {
   },
   delentry: () => confirmSheet('Deze titel wordt uit je collectie verwijderd.', 'Verwijderen', () => {
     const e = S.entries.find(x => x.id === V.entryId); const lid = e ? e.list : S.lists[0].id;
-    S.entries = S.entries.filter(x => x.id !== V.entryId); save(); toast('Verwijderd'); location.replace('#/l/' + lid);
+    S.del[V.entryId] = Date.now(); S.entries = S.entries.filter(x => x.id !== V.entryId); commit(); toast('Verwijderd'); location.replace('#/l/' + lid);
   }),
-  addlist: () => { const n = $('#nl').value.trim(); if (!n) { toast('Geef de lijst een naam'); return; } S.lists.push({ id: uid(), name: n }); save(); vManage(); toast('Lijst toegevoegd'); },
+  addlist: () => { const n = $('#nl').value.trim(); if (!n) { toast('Geef de lijst een naam'); return; } S.lists.push({ id: uid(), name: n, u: Date.now() }); commit(); vManage(); toast('Lijst toegevoegd'); },
   dellist: d => {
     if (S.lists.length < 2) { toast('Je hebt minstens één lijst nodig'); return; }
     const l = listById(d.l);
     confirmSheet('Lijst "' + l.name + '" en de ' + plural(count(l.id), 'titel', 'titels') + ' erin worden verwijderd.', 'Verwijderen', () => {
-      S.entries = S.entries.filter(e => e.list !== l.id); S.lists = S.lists.filter(x => x.id !== l.id); save(); vManage();
+      const now = Date.now();
+      S.entries.filter(e => e.list === l.id).forEach(e => { S.del[e.id] = now; });
+      S.delLists[l.id] = now;
+      S.entries = S.entries.filter(e => e.list !== l.id); S.lists = S.lists.filter(x => x.id !== l.id); commit(); vManage();
     });
   },
   exportlist: () => { closeSheet(); exportCsv(listItems(), 'filmkast-' + listById(V.id).name.toLowerCase().replace(/\W+/g, '-') + '.csv'); },
   clearlist: () => confirmSheet('Alle titels in "' + listById(V.id).name + '" worden verwijderd.', 'Leegmaken', () => {
-    S.entries = S.entries.filter(e => e.list !== V.id); save(); renderList(); toast('Lijst geleegd');
+    const now = Date.now();
+    S.entries.filter(e => e.list === V.id).forEach(e => { S.del[e.id] = now; });
+    S.entries = S.entries.filter(e => e.list !== V.id); commit(); renderList(); toast('Lijst geleegd');
   }),
   export: () => {
-    const out = { app: 'filmkast', v: 1, saved: new Date().toISOString(), lists: S.lists, entries: S.entries };
+    const out = { app: 'filmkast', v: 1, saved: new Date().toISOString(), lists: S.lists, entries: S.entries.map(cleanEntry) };
     download('filmkast-backup-' + today() + '.json', JSON.stringify(out), 'application/json');
   },
   exportcsv: () => exportCsv(S.entries, 'filmkast-alles-' + today() + '.csv'),
@@ -584,11 +841,16 @@ const IN = {
   aq: el => { V.q = el.value; addSearch(); },
   fseen: el => { V.f.seen = el.value; fillItems(); },
   fgenre: el => { V.f.genre = el.value; fillItems(); },
-  elist: el => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.list = el.value; save(); toast('Verplaatst naar ' + listById(el.value).name); } },
-  eseen: el => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.seen = el.checked ? today() : ''; save(); fillDetail(); } },
-  edate: el => { const e = S.entries.find(x => x.id === V.entryId); if (e && el.value) { e.seen = el.value; save(); } },
-  enote: el => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.note = el.value; save(); } },
-  rename: el => { const l = listById(el.dataset.l); if (l && el.value.trim()) { l.name = el.value.trim(); save(); } },
+  elist: el => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.list = el.value; e.u = Date.now(); commit(); toast('Verplaatst naar ' + listById(el.value).name); } },
+  eseen: el => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.seen = el.checked ? today() : ''; e.u = Date.now(); commit(); fillDetail(); } },
+  edate: el => { const e = S.entries.find(x => x.id === V.entryId); if (e && el.value) { e.seen = el.value; e.u = Date.now(); commit(); } },
+  enote: el => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.note = el.value; e.u = Date.now(); commit(); } },
+  rename: el => { const l = listById(el.dataset.l); if (l && el.value.trim()) { l.name = el.value.trim(); l.u = Date.now(); commit(); } },
+  synctoken: el => {
+    S.settings.syncToken = el.value.trim(); S.settings.gistId = ''; save();
+    clearTimeout(syncT);
+    if (syncOn()) syncT = setTimeout(() => syncNow(false), 1500);
+  },
   apikey: el => { S.settings.apiKey = el.value.trim(); save(); },
   lang: el => { S.settings.lang = el.value; S.genres = { movie: {}, tv: {} }; save(); },
   region: el => { S.settings.region = el.value; save(); },
@@ -611,3 +873,7 @@ function applyAccent() { document.documentElement.style.setProperty('--acc', S.s
 applyAccent();
 if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) navigator.serviceWorker.register('sw.js').catch(() => { });
 route();
+if (syncOn()) syncNow(true);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && syncOn() && Date.now() - lastSync > 30000) syncNow(true);
+});
