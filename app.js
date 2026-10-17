@@ -476,7 +476,7 @@ function fillDetail() {
   if (tag) h += '<p class="over small" style="font-style:italic;margin-top:0">' + esc(tag) + '</p>';
   if (V.err && V.err !== 'GEEN_SLEUTEL') h += '<p class="over small">' + esc(V.err) + '</p>';
   if (e) {
-    h += '<section class="panel2"><h2>In mijn collectie</h2>' +
+    h += '<section class="panel2 pcoll"><h2>In mijn collectie</h2>' +
       '<label class="fld">Lijst<select id="e-list" class="in" data-in="elist">' + S.lists.map(l => '<option value="' + l.id + '"' + (l.id === e.list ? ' selected' : '') + '>' + esc(l.name) + '</option>').join('') + '</select></label>' +
       '<div class="chkrow"><label class="chk"><input type="checkbox" data-in="eseen"' + (e.seen ? ' checked' : '') + '> Gezien</label>' +
       '<label class="chk"><input type="checkbox" data-in="ens"' + (e.ns ? ' checked' : '') + '> Niet gezien</label></div>' +
@@ -486,8 +486,8 @@ function fillDetail() {
       esc((e.where || []).map(k => (PLAT.find(q => q[0] === k) || [])[1]).filter(Boolean).join(', ') || 'Geen gekozen') + '</small><i>' + (V.tagsOpen ? '▴' : '▾') + '</i></button>' +
       (V.tagsOpen ? '<div class="foldb"><div class="chkrow">' + PLAT.map(q => '<label class="chk"><input type="checkbox" data-in="eplat" data-k="' + q[0] + '"' + ((e.where || []).includes(q[0]) ? ' checked' : '') + '> ' + q[1] + '</label>').join('') + '</div>' +
         '<label class="fld">Toegevoegd op<input type="date" class="in" value="' + esc(isoOf(e.added || Date.now())) + '" max="' + today() + '" data-in="eadded"></label></div>' : '') + '</div>' +
-      '<button class="btn" data-a="editdata">Gegevens bewerken</button>' +
-      '<button class="btn bad" data-a="delentry">Verwijderen uit collectie</button></section>';
+      '<div class="cols"><button class="btn" data-a="editdata">Gegevens bewerken</button>' +
+      '<button class="btn bad" data-a="delentry">Verwijderen</button></div></section>';
   } else {
     const own = S.entries.filter(x => x.type === V.type && x.tmdbId === V.tmdbId);
     if (own.length) h += '<p class="over small">Staat al in: ' + own.map(x => '<a class="link" href="#/e/' + x.id + '">' + esc((listById(x.list) || {}).name) + '</a>').join(', ') + '</p>';
@@ -892,14 +892,24 @@ const A = {
       '<label class="fld">Naam (mag leeg)<input id="ss-name" class="in" placeholder="Seizoen ' + next + '"></label>' +
       '<div class="cols"><button class="btn ghost" data-a="closesheet">Annuleren</button><button class="btn pri" data-a="saveaddseason">Toevoegen</button></div>');
   },
-  saveaddseason: () => {
+  saveaddseason: async () => {
     const e = S.entries.find(x => x.id === V.entryId); if (!e) return;
     const n = parseInt($('#ss-n').value, 10), name = $('#ss-name').value.trim();
     if (!(n > 0)) { toast('Geef een seizoensnummer'); return; }
     const list = seasonsOf(e, e.d || (CACHE[V.type + '-' + V.tmdbId] || {}).d).map(q => Object.assign({}, q));
     if (list.some(q => q.n === n)) { toast('Dit seizoen bestaat al'); return; }
-    list.push({ n, name: name || 'Seizoen ' + n, eps: 0, date: '', poster: '' });
-    list.sort((a, b) => a.n - b.n);
+    let q = { n, name: name || 'Seizoen ' + n, eps: 0, date: '', poster: '' };
+    if (e.tmdbId) {
+      toast('Seizoen controleren…');
+      try {
+        const d = await api('/tv/' + e.tmdbId + '/season/' + n);
+        q = { n, name: name || d.name || 'Seizoen ' + n, eps: (d.episodes || []).length, date: d.air_date || '', poster: d.poster_path || '' };
+      } catch (err) {
+        toast(String(err.message) === 'HTTP_404' ? 'Seizoen ' + n + ' bestaat niet bij TMDb' : 'Controleren lukt niet. Probeer het later opnieuw.');
+        return;
+      }
+    }
+    list.push(q); list.sort((a, b) => a.n - b.n);
     e.seasons = list; e.u = Date.now(); commit(); closeSheet(); fillDetail(); toast('Seizoen toegevoegd');
   },
   renameseason: d => {

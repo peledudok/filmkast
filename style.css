@@ -218,3 +218,7 @@ details.how ol{margin:8px 0 0;padding-left:22px;display:grid;gap:6px}
 @media (min-width:700px){.eps,.seasons{max-width:760px;margin-left:auto;margin-right:auto;width:100%}}
 .sech{display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)}
 .sech .foldh.plain{flex:1;min-width:0;border-bottom:0}
+.pcoll{gap:10px;padding:14px}
+.pcoll .fld{gap:4px}
+.pcoll .chk{min-height:40px}
+.dtitle{margin-top:10px}
