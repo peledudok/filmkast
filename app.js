@@ -448,7 +448,7 @@ function fillDetail() {
     (V.tmdbId ? '<button class="ib glass" data-a="share" aria-label="Delen">' + ico('share') + '</button>' : '') + '</div></div>' +
     '<div class="dmain">' + posterBlock + '<div class="dside">' +
     (d && d.cert ? '<span class="cert">' + esc(d.cert) + '</span>' : '') +
-    (rating ? '<div class="score"><b>' + Number(rating).toFixed(1).replace('.', ',') + '</b><small>TMDb</small></div>' : '') +
+    (rating ? '<a class="score" href="https://www.themoviedb.org/' + V.type + '/' + V.tmdbId + '" target="_blank" rel="noopener" aria-label="Open op TMDb"><b>' + Number(rating).toFixed(1).replace('.', ',') + '</b><small>TMDb ›</small></a>' : '') +
     (d && d.imdb ? '<a class="btn sm" href="https://www.imdb.com/title/' + esc(d.imdb) + '/" target="_blank" rel="noopener">IMDb</a>' : '') +
     '</div></div><h1 class="dtitle">' + esc(title) + '</h1>';
   const tag = (d && d.tagline) || c.tagline;
