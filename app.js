@@ -124,13 +124,15 @@ function addEntry(item, listId) {
   const e = {
     id: uid(), list: listId, type: item.type, tmdbId: item.tmdbId || 0, title: item.title, year: item.year || '',
     poster: item.poster || '', overview: item.overview || '', rating: item.rating || 0, genres: item.genres || [],
-    seen: '', note: '', tags: [], where: [], ns: false, why: '', added: Date.now(), u: Date.now()
+    seen: '', note: '', tags: [], sn: [], where: [], ns: false, why: '', added: Date.now(), u: Date.now()
   };
   S.entries.push(e); commit(); return e;
 }
 
 /* ---------- weergave-hulpjes ---------- */
 const I = {
+  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/>',
   menu: '<path d="M3 6h18M3 12h18M3 18h18"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
   filter: '<path d="M3 5h18M6 12h12M10 19h4"/>',
@@ -214,10 +216,10 @@ function route() {
   const p = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent);
   closeDrawer(); closeSheet(); if (IO) { IO.disconnect(); IO = null; }
   window.scrollTo(0, 0);
-  const views = { l: vList, p: vPublic, e: vEntry, d: vDetail, beheer: vManage, instellingen: vSettings, backup: vBackup, over: vAbout, toevoegen: vAdd, nieuw: vNew, c: vCollection };
+  const views = { l: vList, p: vPublic, e: vEntry, d: vDetail, beheer: vManage, instellingen: vSettings, backup: vBackup, over: vAbout, toevoegen: vAdd, nieuw: vNew, c: vCollection, s: vSeason };
   const f = views[p[0]];
   if (!f) { location.replace('#/l/' + S.lists[0].id); return; }
-  f(p[1], p[2]);
+  f(p[1], p[2], p[3]);
 }
 
 /* eigen lijst */
@@ -374,14 +376,15 @@ function vEntry(id) {
   if (!e) { location.replace('#/l/' + S.lists[0].id); return; }
   V = { kind: 'det', type: e.type, tmdbId: e.tmdbId, entryId: e.id, err: '' };
   fillDetail();
-  if (e.tmdbId && !(e.d && 'orig' in e.d) && hasKey()) enrich(V);
+  if (e.tmdbId && !(e.d && 'ss' in e.d) && hasKey()) enrich(V);
 }
 function vDetail(type, id) {
   V = { kind: 'det', type, tmdbId: +id, entryId: '', err: '' };
   fillDetail();
   const c = CACHE[type + '-' + id];
-  if (!(c && c.d && 'orig' in c.d)) enrich(V);
+  if (!(c && c.d && 'ss' in c.d)) enrich(V);
 }
+const seasonsOf = (e, d) => (e && Array.isArray(e.seasons)) ? e.seasons : ((d && d.ss) || []);
 function certOf(d, type) {
   const reg = S.settings.region;
   if (type === 'movie') {
@@ -407,6 +410,7 @@ function compact(d, type) {
   const col = d.belongs_to_collection;
   const alt = ((d.alternative_titles && (d.alternative_titles.titles || d.alternative_titles.results)) || []).map(x => x.title).filter(Boolean);
   return {
+    ss: (d.seasons || []).filter(x => x.season_number > 0).map(x => ({ n: x.season_number, name: x.name || '', poster: x.poster_path || '', eps: x.episode_count || 0, date: x.air_date || '' })),
     orig: d.original_title || d.original_name || '', alt: [...new Set(alt)].slice(0, 12),
     tagline: d.tagline || '', release: d.release_date || d.first_air_date || '',
     runtime: d.runtime || (d.episode_run_time && d.episode_run_time[0]) || 0,
@@ -506,6 +510,20 @@ function fillDetail() {
   }
   if (g('genres').length) h += dsec('Genre', esc(g('genres').join(' - ')));
   if (g('overview')) h += dsec('Beschrijving', esc(g('overview')));
+  if (V.type === 'tv') {
+    const list = seasonsOf(e, d);
+    if (list.length || e) {
+      const open = V.seasonsOpen !== false, ed = !!V.seasonEdit && !!e;
+      h += '<section class="dsec"><div class="sech"><button class="foldh plain" data-a="toggleseasons" aria-expanded="' + open + '"><span>Seizoenen</span><small>' + plural(list.length, 'seizoen', 'seizoenen') + '</small><i>' + (open ? '▴' : '▾') + '</i></button>' +
+        (e ? '<button class="btn sm' + (ed ? ' pri' : '') + '" data-a="editseasons">' + (ed ? 'Klaar' : 'Bewerken') + '</button><button class="btn sm" data-a="addseason">+ Seizoen</button>' : '') + '</div>';
+      if (open) h += '<div class="seasons">' + (list.length ? list.map(q => '<div class="srow"><a class="sa" href="#/s/' + V.tmdbId + '/' + q.n + '">' +
+        '<div class="spos">' + (q.poster ? '<img loading="lazy" alt="" src="' + IMG + 'w185' + esc(q.poster) + '">' : '') + '</div>' +
+        '<div class="sb"><b>' + esc(q.name || 'Seizoen ' + q.n) + '</b><span>' + [q.eps ? plural(q.eps, 'aflevering', 'afleveringen') : '', q.date ? q.date.slice(0, 4) : ''].filter(Boolean).join(' · ') + '</span></div></a>' +
+        (ed ? '<button class="ib" data-a="renameseason" data-n="' + q.n + '" aria-label="Naam wijzigen">' + ico('edit') + '</button><button class="ib" data-a="delseason" data-n="' + q.n + '" aria-label="Seizoen verwijderen">' + ico('trash') + '</button>'
+          : (e ? '<label class="chk sc"><input type="checkbox" data-in="eseason" data-n="' + q.n + '"' + ((e.sn || []).includes(q.n) ? ' checked' : '') + '> Gezien</label>' : '')) + '</div>').join('') : '<p class="small" style="margin:8px 0">Nog geen seizoenen. Voeg er een toe met de knop hierboven.</p>') + '</div>';
+      h += '</section>';
+    }
+  }
   if (d && d.cast.length) {
     h += '<section class="dsec"><h2>Acteurs</h2><div class="cast">' + d.cast.map(p => '<div class="cm">' +
       (p.p ? '<img loading="lazy" alt="" src="' + IMG + 'w185' + esc(p.p) + '">' : '<div class="ph"></div>') +
@@ -529,6 +547,41 @@ function fillDetail() {
   const keep = window.scrollY;
   app.innerHTML = h;
   window.scrollTo(0, keep);
+}
+
+/* seizoen */
+async function vSeason(id, n) {
+  V = { kind: 'season', tmdbId: +id, n: +n, d: null, err: '' };
+  const my = V;
+  renderSeason();
+  try {
+    if (!my.tmdbId) throw new Error('GEEN_DATA');
+    const d = await api('/tv/' + id + '/season/' + n);
+    if (V !== my) return;
+    my.d = d;
+  } catch (err) { if (V !== my) return; my.err = errMsg(err); }
+  renderSeason();
+}
+function renderSeason() {
+  const c = CACHE['tv-' + V.tmdbId] || {};
+  const own = S.entries.find(x => x.type === 'tv' && x.tmdbId === V.tmdbId);
+  const show = (own && own.title) || c.title || '';
+  const d = V.d;
+  let h = bar({ title: (d && d.name) || 'Seizoen ' + V.n, sub: show });
+  if (V.err === 'GEEN_SLEUTEL') h += '<div class="notice"><b>API-sleutel nodig</b><a class="btn pri" href="#/instellingen">Naar instellingen</a></div>';
+  else if (V.err) h += '<div class="notice"><b>Geen afleveringsgegevens</b><span>Voor dit seizoen zijn geen gegevens van TMDb beschikbaar. Dit gebeurt bij zelf toegevoegde seizoenen of series.</span></div>';
+  else if (!d) h += '<div class="spin">Laden…</div>';
+  else {
+    h += '<div class="hero">' + posterHtml({ poster: d.poster_path || '', type: 'tv' }, 'w342') + '<div><h1>' + esc(show ? show + ' – ' + (d.name || 'Seizoen ' + V.n) : (d.name || '')) + '</h1>' +
+      '<div class="meta">' + [d.air_date ? d.air_date.slice(0, 4) : '', plural((d.episodes || []).length, 'aflevering', 'afleveringen')].filter(Boolean).join(' · ') + '</div></div></div>';
+    if (d.overview) h += dsec('Beschrijving', esc(d.overview));
+    h += '<section class="dsec"><h2>Afleveringen</h2></section><div class="eps">' + (d.episodes || []).map(x =>
+      '<article class="ep"><div class="eh"><div class="et"><b>' + x.episode_number + '. ' + esc(x.name || 'Aflevering ' + x.episode_number) + '</b>' +
+      '<span>' + [x.air_date ? fmtDate(x.air_date) : '', x.runtime ? x.runtime + ' min' : ''].filter(Boolean).join(' · ') + '</span></div>' +
+      (x.still_path ? '<img class="still" loading="lazy" alt="" src="' + IMG + 'w300' + esc(x.still_path) + '">' : '') + '</div>' +
+      (x.overview ? '<p>' + esc(x.overview) + '</p>' : '') + '</article>').join('') + '</div><div style="height:40px"></div>';
+  }
+  app.innerHTML = h;
 }
 
 /* collectie */
@@ -578,6 +631,8 @@ function cleanEntry(x) {
     id: String(x.id || uid()), list: String(x.list || ''), type: x.type === 'tv' ? 'tv' : 'movie', tmdbId: +x.tmdbId || 0,
     title: String(x.title || ''), year: String(x.year || ''), poster: String(x.poster || ''), overview: String(x.overview || ''), rating: +x.rating || 0,
     genres: Array.isArray(x.genres) ? x.genres.map(String) : [], seen: String(x.seen || ''), note: String(x.note || ''),
+    seasons: Array.isArray(x.seasons) ? x.seasons.filter(q => q && +q.n > 0).map(q => ({ n: +q.n, name: String(q.name || ''), eps: +q.eps || 0, date: String(q.date || ''), poster: String(q.poster || '') })) : undefined,
+    sn: Array.isArray(x.sn) ? x.sn.map(Number).filter(n => n > 0) : [],
     tags: Array.isArray(x.tags) ? x.tags.map(String).filter(Boolean) : [], where: Array.isArray(x.where) ? x.where.map(String).filter(k => PLAT.some(q => q[0] === k)) : [], ns: !!x.ns, why: String(x.why || ''),
     added: +x.added || Date.now(), u: +x.u || 0
   };
@@ -828,6 +883,46 @@ const A = {
     if (!v) { toast('Kies een datum'); return; }
     e.seen = v; e.ns = false; e.u = Date.now(); commit(); closeSheet(); fillDetail();
   },
+  editseasons: () => { V.seasonEdit = !V.seasonEdit; fillDetail(); },
+  addseason: () => {
+    const e = S.entries.find(x => x.id === V.entryId); if (!e) return;
+    const list = seasonsOf(e, e.d || (CACHE[V.type + '-' + V.tmdbId] || {}).d);
+    const next = list.reduce((m, q) => Math.max(m, q.n), 0) + 1;
+    openSheet('<h3>Seizoen toevoegen</h3><label class="fld">Nummer<input id="ss-n" class="in" inputmode="numeric" value="' + next + '"></label>' +
+      '<label class="fld">Naam (mag leeg)<input id="ss-name" class="in" placeholder="Seizoen ' + next + '"></label>' +
+      '<div class="cols"><button class="btn ghost" data-a="closesheet">Annuleren</button><button class="btn pri" data-a="saveaddseason">Toevoegen</button></div>');
+  },
+  saveaddseason: () => {
+    const e = S.entries.find(x => x.id === V.entryId); if (!e) return;
+    const n = parseInt($('#ss-n').value, 10), name = $('#ss-name').value.trim();
+    if (!(n > 0)) { toast('Geef een seizoensnummer'); return; }
+    const list = seasonsOf(e, e.d || (CACHE[V.type + '-' + V.tmdbId] || {}).d).map(q => Object.assign({}, q));
+    if (list.some(q => q.n === n)) { toast('Dit seizoen bestaat al'); return; }
+    list.push({ n, name: name || 'Seizoen ' + n, eps: 0, date: '', poster: '' });
+    list.sort((a, b) => a.n - b.n);
+    e.seasons = list; e.u = Date.now(); commit(); closeSheet(); fillDetail(); toast('Seizoen toegevoegd');
+  },
+  renameseason: d => {
+    const e = S.entries.find(x => x.id === V.entryId); if (!e) return;
+    const q = seasonsOf(e, e.d).find(x => x.n === +d.n); if (!q) return;
+    openSheet('<h3>Naam wijzigen</h3><label class="fld">Naam<input id="ss-name" class="in" value="' + esc(q.name || 'Seizoen ' + q.n) + '"></label>' +
+      '<div class="cols"><button class="btn ghost" data-a="closesheet">Annuleren</button><button class="btn pri" data-a="saverename" data-n="' + q.n + '">Opslaan</button></div>');
+  },
+  saverename: d => {
+    const e = S.entries.find(x => x.id === V.entryId); if (!e) return;
+    const list = seasonsOf(e, e.d).map(q => Object.assign({}, q));
+    const q = list.find(x => x.n === +d.n); if (!q) return;
+    q.name = $('#ss-name').value.trim() || 'Seizoen ' + q.n;
+    e.seasons = list; e.u = Date.now(); commit(); closeSheet(); fillDetail();
+  },
+  delseason: d => {
+    const e = S.entries.find(x => x.id === V.entryId); if (!e) return;
+    confirmSheet('Seizoen ' + d.n + ' wordt uit deze serie gehaald.', 'Verwijderen', () => {
+      e.seasons = seasonsOf(e, e.d).filter(q => q.n !== +d.n).map(q => Object.assign({}, q));
+      e.sn = (e.sn || []).filter(n => n !== +d.n); e.u = Date.now(); commit(); fillDetail();
+    });
+  },
+  toggleseasons: () => { V.seasonsOpen = V.seasonsOpen === false; fillDetail(); },
   toggletags: () => { V.tagsOpen = !V.tagsOpen; fillDetail(); },
   addtag: () => {
     const e = S.entries.find(x => x.id === V.entryId), inp = $('#tagin');
@@ -919,6 +1014,7 @@ const IN = {
     } else { e.seen = ''; e.u = Date.now(); commit(); fillDetail(); }
   },
   eadded: el => { const e = S.entries.find(x => x.id === V.entryId); if (e && el.value) { e.added = new Date(el.value + 'T12:00:00').getTime(); e.u = Date.now(); commit(); } },
+  eseason: el => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; const w = new Set(e.sn || []); const n = +el.dataset.n; if (el.checked) w.add(n); else w.delete(n); e.sn = [...w].sort((a, b) => a - b); e.u = Date.now(); commit(); },
   ens: el => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.ns = el.checked; if (el.checked) e.seen = ''; e.u = Date.now(); commit(); fillDetail(); } },
   ewhy: el => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.why = el.value; e.u = Date.now(); commit(); } },
   eplat: el => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; const w = new Set(e.where || []); if (el.checked) w.add(el.dataset.k); else w.delete(el.dataset.k); e.where = [...w]; e.u = Date.now(); commit(); },

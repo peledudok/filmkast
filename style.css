@@ -194,3 +194,27 @@ details.how ol{margin:8px 0 0;padding-left:22px;display:grid;gap:6px}
 .foldh small{flex:1;min-width:0;color:var(--mut);font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .foldh i{font-style:normal;color:var(--acc)}
 .foldb{display:grid;gap:12px;padding:12px 14px}
+
+/* seizoenen en afleveringen */
+.foldh.plain{background:none;padding:0;min-height:44px;border-bottom:1px solid var(--line);color:inherit}
+.foldh.plain span{font:700 14px var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--acc)}
+.seasons{display:flex;flex-direction:column}
+.srow{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line)}
+.sa{flex:1;min-width:0;display:flex;gap:14px;align-items:center;text-decoration:none;padding:8px 0}
+.spos{flex:none;width:64px;aspect-ratio:2/3;border-radius:6px;background:var(--s2);overflow:hidden;border:1px solid var(--line)}
+.spos img{width:100%;height:100%;object-fit:cover;display:block}
+.sb{display:grid;gap:2px;min-width:0}
+.sb b{font-size:19px}
+.sb span{color:var(--mut);font-size:15px}
+.sc{flex:none;min-height:44px;font-size:16px}
+.eps{display:flex;flex-direction:column;padding:0 max(14px,env(safe-area-inset-right,0px)) 0 max(14px,env(safe-area-inset-left,0px))}
+.ep{padding:14px 0;border-bottom:1px solid var(--line)}
+.eh{display:flex;gap:12px;justify-content:space-between;align-items:flex-start}
+.et{display:grid;gap:2px;min-width:0}
+.et b{font-size:19px;line-height:1.25}
+.et span{color:var(--mut);font-size:15px}
+.still{flex:none;width:42%;max-width:240px;aspect-ratio:16/9;object-fit:cover;border-radius:6px;border:1px solid var(--line);background:var(--s2)}
+.ep p{margin:10px 0 0;color:#cfccc5}
+@media (min-width:700px){.eps,.seasons{max-width:760px;margin-left:auto;margin-right:auto;width:100%}}
+.sech{display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)}
+.sech .foldh.plain{flex:1;min-width:0;border-bottom:0}
