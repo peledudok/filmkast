@@ -475,14 +475,13 @@ function fillDetail() {
     h += '<section class="panel2"><h2>In mijn collectie</h2>' +
       '<label class="fld">Lijst<select id="e-list" class="in" data-in="elist">' + S.lists.map(l => '<option value="' + l.id + '"' + (l.id === e.list ? ' selected' : '') + '>' + esc(l.name) + '</option>').join('') + '</select></label>' +
       '<div class="chkrow"><label class="chk"><input type="checkbox" data-in="eseen"' + (e.seen ? ' checked' : '') + '> Gezien</label>' +
-      PLAT.map(q => '<label class="chk"><input type="checkbox" data-in="eplat" data-k="' + q[0] + '"' + ((e.where || []).includes(q[0]) ? ' checked' : '') + '> ' + q[1] + '</label>').join('') +
       '<label class="chk"><input type="checkbox" data-in="ens"' + (e.ns ? ' checked' : '') + '> Niet gezien</label></div>' +
       (e.ns ? '<label class="fld">Waarom niet gezien?<input class="in" data-in="ewhy" value="' + esc(e.why || '') + '" placeholder="Bijvoorbeeld: geen interesse, te eng"></label>' : '') +
       (e.seen ? '<label class="fld">Datum gezien<input type="date" class="in" value="' + esc(e.seen) + '" max="' + today() + '" data-in="edate"></label>' : '') +
-      '<div class="fld">Tags<div class="chips">' + (e.tags || []).map(t => '<button class="chip tag" data-a="deltag" data-t="' + esc(t) + '" aria-label="Tag ' + esc(t) + ' verwijderen">' + esc(t) + ' ×</button>').join('') + '</div>' +
-      '<div class="tagadd"><input id="tagin" class="in" placeholder="Nieuwe tag" autocapitalize="off"><button class="btn" data-a="addtag">Toevoegen</button></div></div>' +
-      '<label class="fld">Toegevoegd op<input type="date" class="in" value="' + esc(isoOf(e.added || Date.now())) + '" max="' + today() + '" data-in="eadded"></label>' +
-      '<label class="fld">Notitie<textarea class="in" data-in="enote" placeholder="Bijvoorbeeld: wil ik met Sam kijken">' + esc(e.note) + '</textarea></label>' +
+      '<div class="fold"><button class="foldh" data-a="toggletags" aria-expanded="' + (V.tagsOpen ? 'true' : 'false') + '"><span>Tags</span><small>' +
+      esc((e.where || []).map(k => (PLAT.find(q => q[0] === k) || [])[1]).filter(Boolean).join(', ') || 'Geen gekozen') + '</small><i>' + (V.tagsOpen ? '▴' : '▾') + '</i></button>' +
+      (V.tagsOpen ? '<div class="foldb"><div class="chkrow">' + PLAT.map(q => '<label class="chk"><input type="checkbox" data-in="eplat" data-k="' + q[0] + '"' + ((e.where || []).includes(q[0]) ? ' checked' : '') + '> ' + q[1] + '</label>').join('') + '</div>' +
+        '<label class="fld">Toegevoegd op<input type="date" class="in" value="' + esc(isoOf(e.added || Date.now())) + '" max="' + today() + '" data-in="eadded"></label></div>' : '') + '</div>' +
       '<button class="btn" data-a="editdata">Gegevens bewerken</button>' +
       '<button class="btn bad" data-a="delentry">Verwijderen uit collectie</button></section>';
   } else {
@@ -525,6 +524,7 @@ function fillDetail() {
         '<span>' + esc(d.collection.name) + '</span></a>';
     }
   } else if (hasKey() && !V.err) h += '<div class="spin">Meer gegevens laden…</div>';
+  if (e) h += '<section class="panel2"><h2>Notitie</h2><textarea class="in" data-in="enote" placeholder="Bijvoorbeeld: wil ik met Sam kijken">' + esc(e.note) + '</textarea></section>';
   h += '<div style="height:40px"></div>';
   const keep = window.scrollY;
   app.innerHTML = h;
@@ -660,7 +660,6 @@ function sheetFilter() {
   openSheet('<h3>Filteren</h3>' +
     '<label class="fld">Gezien<select class="in" data-in="fseen"><option value="">Alles</option><option value="seen"' + (f.seen === 'seen' ? ' selected' : '') + '>Gezien</option><option value="unseen"' + (f.seen === 'unseen' ? ' selected' : '') + '>Nog niet gezien</option><option value="ns"' + (f.seen === 'ns' ? ' selected' : '') + '>Bewust niet gezien</option></select></label>' +
     '<label class="fld">Waar te zien<select class="in" data-in="fplat"><option value="">Overal</option>' + PLAT.map(q => '<option value="' + q[0] + '"' + (f.plat === q[0] ? ' selected' : '') + '>' + q[1] + '</option>').join('') + '</select></label>' +
-    '<label class="fld">Tag<select class="in" data-in="ftag"><option value="">Alle tags</option>' + tags.map(x => '<option' + (f.tag === x ? ' selected' : '') + '>' + esc(x) + '</option>').join('') + '</select></label>' +
     '<label class="fld">Genre<select class="in" data-in="fgenre"><option value="">Alle genres</option>' + genres.map(x => '<option' + (f.genre === x ? ' selected' : '') + '>' + esc(x) + '</option>').join('') + '</select></label>' +
     '<div class="cols"><button class="btn ghost" data-a="clearfilter">Wissen</button><button class="btn pri" data-a="closesheet">Klaar</button></div>');
 }
@@ -829,6 +828,7 @@ const A = {
     if (!v) { toast('Kies een datum'); return; }
     e.seen = v; e.ns = false; e.u = Date.now(); commit(); closeSheet(); fillDetail();
   },
+  toggletags: () => { V.tagsOpen = !V.tagsOpen; fillDetail(); },
   addtag: () => {
     const e = S.entries.find(x => x.id === V.entryId), inp = $('#tagin');
     if (!e || !inp) return;

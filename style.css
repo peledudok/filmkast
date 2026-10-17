@@ -156,7 +156,7 @@ textarea.in{min-height:80px;resize:vertical}
 .play{position:absolute;right:8px;bottom:8px;width:40px;height:40px;border-radius:50%;background:var(--acc);color:var(--on-acc);display:grid;place-items:center;box-shadow:0 2px 8px #000a}
 .dside{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding-bottom:6px}
 .cert{display:inline-grid;place-items:center;min-width:42px;height:42px;padding:0 8px;border:2px solid var(--fg);border-radius:8px;font-weight:700;font-size:17px}
-.score{display:flex;flex-direction:column;line-height:1.1}
+.score{display:flex;flex-direction:column;line-height:1.1;text-decoration:none;color:inherit}
 .score b{font:700 30px var(--head);color:var(--acc)}
 .score small{color:var(--mut);font-size:14px}
 .dtitle{margin:14px 0 4px;padding:0 max(14px,env(safe-area-inset-right,0px)) 0 max(14px,env(safe-area-inset-left,0px));font:700 30px/1.15 var(--head)}
@@ -177,3 +177,20 @@ details.how{font-size:16px;color:var(--mut)}
 details.how summary{cursor:pointer;color:var(--acc);font-weight:700}
 details.how ol{margin:8px 0 0;padding-left:22px;display:grid;gap:6px}
 @media (min-width:700px){.dsec,.dtitle,.dmain,.coll,.over{max-width:760px;margin-left:auto;margin-right:auto;width:100%}.dhero{height:280px}}
+
+/* platforms en tags */
+.chkrow{display:flex;flex-wrap:wrap;gap:2px 18px}
+.chkrow .chk{min-height:44px}
+.chip.tag{cursor:pointer;font:inherit;font-size:16px;padding:6px 12px;color:var(--fg)}
+.tagadd{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin-top:8px}
+.since{color:var(--mut);font-size:16px;margin-top:auto}
+.rb .seen+.since{margin-top:0}
+.otitle{margin:0;padding-top:0;color:var(--mut);font-size:19px}
+
+/* uitklapbare tags */
+.fold{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.foldh{width:100%;display:flex;align-items:center;gap:10px;min-height:52px;padding:0 14px;background:var(--s2);border:0;text-align:left;cursor:pointer;font-size:18px}
+.foldh span{font-weight:700}
+.foldh small{flex:1;min-width:0;color:var(--mut);font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.foldh i{font-style:normal;color:var(--acc)}
+.foldb{display:grid;gap:12px;padding:12px 14px}
