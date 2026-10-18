@@ -689,6 +689,63 @@ const WHY = {
   'morbius': 'Te oud, horror, verwijderd', 'the shift': 'Niet gekeken',
   'hot milk': 'Niet gekeken'
 };
+
+/* ---------- import uit Movie Collection (XML-export, series) ---------- */
+const MC_TAG = { netflix: 'netflix', hbo: 'hbo', 'apple tv': 'apple', bios: 'bios', 'golden globe': 'globe' };
+// Eigen correcties van de gebruiker (TMDb-id): all = alle seizoenen gezien, nums = alleen deze seizoenen, where = extra tags
+const MC_FIX = {
+  1424: { all: true, where: ['netflix'] }, 60574: { all: true, where: ['netflix'] }, 60699: { nums: [1] },
+  1399: { file: true, where: ['hbo'] }, 46952: { file: true, where: ['netflix'] }, 153312: { file: true, where: ['sky'] },
+  219971: { file: true, where: ['sky'] }, 97539: { file: true, where: ['netflix'] }, 49010: { file: true }
+};
+function mcNums(txt) {
+  const out = new Set(); txt = txt.toLowerCase();
+  (txt.match(/(\d+)\s*t\/m\s*(\d+)/g) || []).forEach(m => { const [a, b] = m.match(/\d+/g).map(Number); for (let i = a; i <= b; i++) out.add(i); });
+  txt.replace(/(\d+)\s*t\/m\s*(\d+)/g, '').replace(/\d+/g, m => { out.add(+m); return m; });
+  return out;
+}
+function buildXmlPlan(text) {
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length || !doc.documentElement || doc.documentElement.localName !== 'moviecollection') throw new Error('XML');
+  const kids = (el, n) => Array.from(el.children).filter(c => c.localName === n);
+  const kid = (el, n) => kids(el, n)[0];
+  const txt = (el, n) => { const c = kid(el, n); return c ? c.textContent.trim() : ''; };
+  const tagName = {};
+  const tl = kid(doc.documentElement, 'tags');
+  if (tl) kids(tl, 'tag').forEach(t => { tagName[t.getAttribute('id')] = (t.getAttribute('name') || '').trim(); });
+  const all = Array.from(doc.getElementsByTagName('series')).filter(e => e.hasAttribute('tmdb_id'));
+  return all.map(s => {
+    const id = +s.getAttribute('tmdb_id');
+    const seasons = kid(s, 'seasons') ? kids(kid(s, 'seasons'), 'season') : [];
+    const fileSeasons = seasons.map(q => +q.getAttribute('season_number')).filter(n => n > 0);
+    const tg = txt(s, 'tags').split('|').filter(Boolean).map(i => (tagName[i] || '').toLowerCase());
+    const note = txt(s, 'note'), n = note.toLowerCase();
+    const where = new Set(tg.map(t => MC_TAG[t]).filter(Boolean));
+    let sn = new Set(), allSeen = false;
+    seasons.forEach(q => { const t = txt(q, 'note').toLowerCase(); if (/seen|gezien/.test(t) && !/not seen/.test(t)) sn.add(+q.getAttribute('season_number')); });
+    const sdt = {};
+    seasons.forEach(q => {
+      const dts = Array.from(q.getElementsByTagName('last_seen')).map(x => x.textContent.trim()).filter(Boolean).sort();
+      if (dts.length && /^\d{4}-\d{2}-\d{2}$/.test(dts[0])) { sn.add(+q.getAttribute('season_number')); sdt[+q.getAttribute('season_number')] = dts[0]; }
+    });
+    if (n.startsWith('not seen')) { /* niets */ }
+    else if (/\ball\b/.test(n)) allSeen = true;
+    else if (/\d/.test(n) && /seen/.test(n)) mcNums(n).forEach(x => { if (fileSeasons.includes(x)) sn.add(x); });
+    else if ((n.includes('seen') || tg.includes('seen')) && !sn.size) fileSeasons.forEach(x => sn.add(x));
+    const fix = MC_FIX[id];
+    if (fix) {
+      (fix.where || []).forEach(w => where.add(w));
+      if (fix.all) allSeen = true;
+      else if (fix.nums) sn = new Set(fix.nums);
+      else if (fix.file) sn = new Set(fileSeasons);
+    }
+    const seenAny = allSeen || sn.size > 0;
+    return {
+      xml: true, tmdbId: id, type: 'tv', title: txt(s, 'customTitle') || txt(s, 'name'), tr: '', added: '', seen: seenAny ? 'x' : '', ns: false, why: '',
+      list: seenAny ? 'tv' : 'wish', where: [...where], imdb: '', note, allSeen, sn: [...sn].sort((a, b) => a - b), sdt, res: null, pick: null
+    };
+  }).filter(r => r.tmdbId);
+}
 function buildPlan(text) {
   text = text.replace(/^﻿/, '');
   const first = text.split('\n')[0];
@@ -734,6 +791,10 @@ async function apiRetry(path, params) {
   throw last;
 }
 async function matchOne(rec) {
+  if (rec.xml) {
+    const d = await apiRetry('/tv/' + rec.tmdbId, {});
+    return { auto: Object.assign({ _ss: (d.seasons || []).map(q => q.season_number).filter(n => n > 0) }, d), cands: [] };
+  }
   if (rec.imdb) {
     const r = await apiRetry('/find/' + rec.imdb, { external_source: 'imdb_id' });
     const hit = ((rec.type === 'tv' ? r.tv_results : r.movie_results) || [])[0];
@@ -776,16 +837,18 @@ function renderImp() {
   let h = bar({ title: 'Importeren uit CSV' });
   if (I.err) h += '<div class="notice">' + (I.err === 'GEEN_SLEUTEL' ? '<b>API-sleutel nodig</b><span>Vul eerst je TMDb-sleutel in bij Instellingen.</span>' : esc(I.err)) + '</div>';
   if (I.phase === 'pick') {
-    h += '<section class="panel2"><h2>Bestand kiezen</h2><p class="small" style="margin:0">Kies het CSV-bestand uit MovieMeter (films). De app zoekt elke titel bij TMDb op. Laat dit scherm open tijdens het importeren.</p>' +
-      '<label class="btn pri" for="impf">CSV-bestand kiezen</label><input id="impf" type="file" accept=".csv,text/csv,text/plain" data-in="impfile" hidden></section>';
+    h += '<section class="panel2"><h2>Bestand kiezen</h2><p class="small" style="margin:0">Kies het CSV-bestand uit MovieMeter (films) of de XML-export uit Movie Collection (series). Laat dit scherm open tijdens het importeren.</p>' +
+      '<label class="btn pri" for="impf">Bestand kiezen</label><input id="impf" type="file" accept=".csv,.xml,text/csv,text/xml,application/xml,text/plain" data-in="impfile" hidden></section>';
   } else if (I.phase === 'ready') {
     const c = impCounts();
     h += '<section class="panel2"><h2>Dit gaat er gebeuren</h2><p style="margin:0">' + plural(I.recs.length, 'titel', 'titels') + ' in het bestand:</p>' +
+      (I.xml ? '<div class="stack small"><div>• <b style="color:var(--fg)">' + c.seen + '</b> (deels) gezien, naar de lijst Series</div><div>• <b style="color:var(--fg)">' + c.wish + '</b> niet gezien, naar de Verlanglijst</div></div>' +
+      '<p class="small" style="margin:0">De titels worden bij TMDb opgehaald op nummer. Welke seizoenen gezien zijn, haal ik uit je notities, tags en kijkdatums.</p>' :
       '<div class="stack small"><div>• <b style="color:var(--fg)">' + c.seen + '</b> gezien, naar de lijst Films (bij sommige is de datum onbekend)</div>' +
       '<div>• <b style="color:var(--fg)">' + c.ns + '</b> niet gezien (gekleurd of "niet gezien"), naar de lijst Films</div>' +
       '<div>• <b style="color:var(--fg)">' + c.wish + '</b> zonder kijkdatum, naar de Verlanglijst</div></div>' +
-      '<p class="small" style="margin:0">Opmerkingen worden je notitie. De datum van toevoegen wordt "Toegevoegd op". Vinkjes zoals Netflix, Bios en Oscar worden overgenomen.</p>' +
-      '<button class="btn pri" data-a="impstart">Importeren starten</button><label class="btn ghost" for="impf">Ander bestand kiezen</label><input id="impf" type="file" accept=".csv,text/csv,text/plain" data-in="impfile" hidden></section>';
+      '<p class="small" style="margin:0">Opmerkingen worden je notitie. De datum van toevoegen wordt "Toegevoegd op". Vinkjes zoals Netflix, Bios en Oscar worden overgenomen.</p>') +
+      '<button class="btn pri" data-a="impstart">Importeren starten</button><label class="btn ghost" for="impf">Ander bestand kiezen</label><input id="impf" type="file" accept=".csv,.xml,text/csv,text/xml,application/xml,text/plain" data-in="impfile" hidden></section>';
   } else if (I.phase === 'run') {
     const pct = Math.round(100 * I.done / I.recs.length);
     h += '<section class="panel2"><h2>Bezig met opzoeken</h2><p style="margin:0">' + I.done + ' van ' + I.recs.length + '</p>' +
@@ -805,7 +868,7 @@ function renderImp() {
   } else if (I.phase === 'done') {
     h += '<section class="panel2"><h2>Klaar</h2><p style="margin:0"><b>' + plural(I.added, 'titel', 'titels') + '</b> toegevoegd.' + (I.dup ? ' ' + plural(I.dup, 'titel stond', 'titels stonden') + ' al in je collectie.' : '') + '</p>' +
       (I.skipped.length ? '<p class="small" style="margin:0">Niet geïmporteerd (' + I.skipped.length + '), voeg deze zelf toe:</p><div class="small" style="max-height:260px;overflow:auto">' + I.skipped.map(x => esc(x)).join('<br>') + '</div>' : '') +
-      '<p class="small" style="margin:0">Deze lijst blijft bewaard onder Back-up en herstel.</p><a class="btn pri" href="#/l/movies">Naar mijn films</a></section>';
+      (I.skipped.length ? '<p class="small" style="margin:0">Deze lijst blijft bewaard onder Back-up en herstel.</p>' : '') + '<a class="btn pri" href="#/l/' + (I.recs[0] && I.recs[0].xml ? 'tv' : 'movies') + '">' + (I.recs[0] && I.recs[0].xml ? 'Naar mijn series' : 'Naar mijn films') + '</a></section>';
   }
   app.innerHTML = h;
 }
@@ -844,9 +907,11 @@ function impFinish() {
     const it = norm(hit, r.type);
     if (S.entries.some(e => e.type === r.type && e.tmdbId === it.tmdbId)) { dup++; return; }
     const ts = r.added ? new Date(r.added + 'T12:00:00').getTime() : Date.now();
+    const ss = hit._ss || [];
+    const snR = r.xml ? (r.allSeen ? ss.slice() : r.sn.slice()) : [];
     S.entries.push({
-      id: uid(), list: lid(r.list), type: r.type, tmdbId: it.tmdbId, title: it.title || r.title, year: it.year, poster: it.poster, overview: it.overview,
-      rating: it.rating, genres: it.genres, seen: r.seen, note: r.note, tags: [], sn: [], where: r.where.slice(), ns: r.ns, why: r.why, added: ts, u: Date.now()
+      id: uid(), list: lid(r.list), type: r.type, tmdbId: it.tmdbId, title: r.xml && r.title ? r.title : (it.title || r.title), year: it.year, poster: it.poster, overview: it.overview,
+      rating: it.rating, genres: it.genres, seen: r.xml ? '' : r.seen, note: r.note, tags: [], sn: snR, sdt: r.xml ? r.sdt : undefined, where: r.where.slice(), ns: r.ns, why: r.why, added: ts, u: Date.now()
     });
     added++;
   });
@@ -1271,8 +1336,9 @@ const IN = {
   impfile: el => {
     const f = el.files && el.files[0]; if (!f) return;
     f.arrayBuffer().then(buf => {
-      try { const recs = buildPlan(csvDecode(buf)); if (!recs.length) throw new Error('LEEG'); IMP = { phase: 'ready', recs }; }
-      catch (e) { IMP = { phase: 'pick', err: 'Dit bestand lijkt geen MovieMeter-CSV te zijn.' }; }
+      const tx = csvDecode(buf), isX = tx.trimStart().startsWith('<');
+      try { const recs = isX ? buildXmlPlan(tx) : buildPlan(tx); if (!recs.length) throw new Error('LEEG'); IMP = { phase: 'ready', recs, xml: isX }; }
+      catch (e) { IMP = { phase: 'pick', err: 'Dit bestand lijkt geen MovieMeter-CSV of Movie Collection-export (XML) te zijn.' }; }
       renderImp();
     });
   },
