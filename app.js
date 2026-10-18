@@ -408,7 +408,7 @@ function compact(d, type) {
   const vids = ((d.videos && d.videos.results) || []).filter(v => v.site === 'YouTube' && v.type === 'Trailer');
   const tr = vids.find(v => v.official) || vids[0];
   const col = d.belongs_to_collection;
-  const alt = ((d.alternative_titles && (d.alternative_titles.titles || d.alternative_titles.results)) || []).filter(x => ['NL', 'BE', 'US', 'GB', 'DE', 'FR'].includes(x.iso_3166_1) && /^[\u0020-\u024F]+$/.test(x.title || '')).map(x => x.title).filter(Boolean);
+  const alt = ((d.alternative_titles && (d.alternative_titles.titles || d.alternative_titles.results)) || []).filter(x => ['NL', 'BE', 'US', 'GB'].includes(x.iso_3166_1) && /^[\u0020-\u024F]+$/.test(x.title || '')).map(x => x.title).filter(Boolean);
   return {
     altv: 2,
     ss: (d.seasons || []).filter(x => x.season_number > 0).map(x => ({ n: x.season_number, name: x.name || '', poster: x.poster_path || '', eps: x.episode_count || 0, date: x.air_date || '' })),
@@ -518,9 +518,10 @@ function fillDetail() {
   } else {
     h += dsec2('Verschijningsdatum', esc(rel), 'Speelduur', d && d.runtime ? d.runtime + ' min' : '--');
   }
-  if (d && d.alt && d.alt.length) {
-    const seenT = new Set([String(title).toLowerCase(), String(d.orig || '').toLowerCase()]);
-    const others = d.alt.filter(x => { const k = x.toLowerCase(); if (seenT.has(k)) return false; seenT.add(k); return true; }).slice(0, 6);
+  if (d && d.altv === 2 && d.alt && d.alt.length) {
+    const nk = x => String(x).toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const seenT = new Set([nk(title), nk(d.orig || '')]);
+    const others = d.alt.filter(x => { const k = nk(x); if (!k || seenT.has(k)) return false; seenT.add(k); return true; }).slice(0, 4);
     if (others.length) h += dsec('Andere titels', others.map(x => esc(x)).join('<br>'));
   }
   if (g('genres').length) h += dsec('Genre', esc(g('genres').join(' - ')));
