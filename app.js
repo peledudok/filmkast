@@ -376,7 +376,7 @@ function vEntry(id) {
   if (!e) { location.replace('#/l/' + S.lists[0].id); return; }
   V = { kind: 'det', type: e.type, tmdbId: e.tmdbId, entryId: e.id, err: '' };
   fillDetail();
-  if (e.tmdbId && !(e.d && 'ss' in e.d) && hasKey()) enrich(V);
+  if (e.tmdbId && !(e.d && 'ss' in e.d && e.d.altv === 2) && hasKey()) enrich(V);
 }
 function vDetail(type, id) {
   V = { kind: 'det', type, tmdbId: +id, entryId: '', err: '' };
@@ -408,10 +408,11 @@ function compact(d, type) {
   const vids = ((d.videos && d.videos.results) || []).filter(v => v.site === 'YouTube' && v.type === 'Trailer');
   const tr = vids.find(v => v.official) || vids[0];
   const col = d.belongs_to_collection;
-  const alt = ((d.alternative_titles && (d.alternative_titles.titles || d.alternative_titles.results)) || []).map(x => x.title).filter(Boolean);
+  const alt = ((d.alternative_titles && (d.alternative_titles.titles || d.alternative_titles.results)) || []).filter(x => ['NL', 'BE', 'US', 'GB', 'DE', 'FR'].includes(x.iso_3166_1) && /^[\u0020-\u024F]+$/.test(x.title || '')).map(x => x.title).filter(Boolean);
   return {
+    altv: 2,
     ss: (d.seasons || []).filter(x => x.season_number > 0).map(x => ({ n: x.season_number, name: x.name || '', poster: x.poster_path || '', eps: x.episode_count || 0, date: x.air_date || '' })),
-    orig: d.original_title || d.original_name || '', alt: [...new Set(alt)].slice(0, 12),
+    orig: d.original_title || d.original_name || '', alt: [...new Set(alt)].slice(0, 8),
     tagline: d.tagline || '', release: d.release_date || d.first_air_date || '',
     runtime: d.runtime || (d.episode_run_time && d.episode_run_time[0]) || 0,
     seasons: d.number_of_seasons || 0, episodes: d.number_of_episodes || 0, status: d.status || '', cert: certOf(d, type),
