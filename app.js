@@ -157,8 +157,9 @@ function bar(o) {
   const acts = (o.acts || []).map(a => '<button class="ib" data-a="' + a[0] + '" aria-label="' + a[2] + '">' + ico(a[1]) + '</button>').join('');
   return '<header class="bar">' + lead + '<div class="tt"><b>' + esc(o.title) + '</b>' + (o.sub ? '<small>' + esc(o.sub) + '</small>' : '') + '</div>' + acts + '</header>';
 }
+const posterSrc = (p, sz) => /^https?:\/\//.test(p) ? p : IMG + (sz || 'w185') + p;
 const posterHtml = (it, sz) => it.poster
-  ? '<div class="pos"><img loading="lazy" alt="" src="' + IMG + (sz || 'w185') + esc(it.poster) + '"></div>'
+  ? '<div class="pos"><img loading="lazy" alt="" src="' + esc(posterSrc(it.poster, sz)) + '"></div>'
   : '<div class="pos">geen<br>afbeelding</div>';
 function entryRow(e) {
   return '<a class="row" href="#/e/' + e.id + '">' + posterHtml(e) + '<div class="rb"><div class="rt"><b>' + esc(e.title) + '</b>' +
@@ -231,8 +232,10 @@ function route() {
 }
 
 /* eigen lijst */
+const ART = /^(?:(?:the|a|an|de|het|een|le|la|les|el|los|las|il|lo|un|une|der|das|ein|eine)\s+|l['\u2019]|['\u2019]t\s+)/i;
+const sortKey = t => { const s = String(t || '').trim(); const m = s.replace(ART, '').replace(/^[^\p{L}\p{N}]+/u, ''); return m || s; };
 const cmp = {
-  title: (a, b) => a.title.replace(/^(the|de|het|een|a|an)\s+/i, '').localeCompare(b.title.replace(/^(the|de|het|een|a|an)\s+/i, ''), 'nl', { sensitivity: 'base', numeric: true }),
+  title: (a, b) => sortKey(a.title).localeCompare(sortKey(b.title), 'nl', { sensitivity: 'base', numeric: true }),
   year: (a, b) => (+a.year || 0) - (+b.year || 0),
   added: (a, b) => a.added - b.added,
   rating: (a, b) => (a.rating || 0) - (b.rating || 0),
@@ -459,13 +462,56 @@ function compact(d, type) {
     trailer: tr ? tr.key : '', imdb: d.imdb_id || (d.external_ids && d.external_ids.imdb_id) || ''
   };
 }
+function goodTitle(d) {
+  const t = d.title || d.name || '', o = d.original_title || d.original_name || '';
+  if (!t || d.original_language === 'nl' || t.trim().toLowerCase() !== o.trim().toLowerCase()) return t;
+  const en = ((d.translations && d.translations.translations) || []).find(x => x.iso_639_1 === 'en' && x.data && (x.data.title || x.data.name));
+  return (en && (en.data.title || en.data.name)) || t;
+}
+function titleFix(e, d) {
+  const o = (d.original_title || d.original_name || '').trim().toLowerCase(), g = goodTitle(d);
+  if (!g || !o || String(e.title || '').trim().toLowerCase() !== o || g.trim().toLowerCase() === o) return false;
+  e.title = g; return true;
+}
+let TC = null;
+async function fixTitles() {
+  if (TC) return;
+  let done = {}; try { done = JSON.parse(localStorage.getItem('filmkast.tc') || '{}'); } catch (x) {}
+  const todo = S.entries.filter(e => e.tmdbId && (e.type === 'movie' || e.type === 'tv') && !done[e.type + e.tmdbId]);
+  TC = { n: 0, of: todo.length, changed: 0, fail: 0 };
+  const show = txt => { const el = $('#tc-st'); if (el) el.textContent = txt; };
+  const seen = {}; let i = 0;
+  const save2 = () => { try { localStorage.setItem('filmkast.tc', JSON.stringify(done)); } catch (x) {} };
+  const worker = async () => {
+    while (i < todo.length) {
+      const e = todo[i++], k = e.type + e.tmdbId;
+      try {
+        if (!seen[k]) seen[k] = apiRetry('/' + e.type + '/' + e.tmdbId, { append_to_response: 'translations' }).catch(x => (String(x.message) === 'HTTP_404' ? null : Promise.reject(x)));
+        const d = await seen[k];
+        if (d && titleFix(e, d)) { e.u = Date.now(); TC.changed++; }
+        done[k] = 1;
+      } catch (x) { TC.fail++; if (String(x.message) === 'GEEN_SLEUTEL' || String(x.message) === 'SLEUTEL_ONGELDIG') { i = todo.length; TC.key = true; } }
+      TC.n++;
+      if (TC.n % 20 === 0) show('Bezig… ' + TC.n + ' van ' + TC.of);
+    }
+  };
+  show('Bezig… 0 van ' + TC.of);
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  save2();
+  if (TC.changed) commit(); else save();
+  const r = TC;
+  TC = null;
+  show(r.key ? 'Geen geldige TMDb-sleutel.' : 'Klaar: ' + r.changed + ' titels aangepast' + (r.fail ? ', ' + r.fail + ' niet gelukt (probeer later opnieuw)' : '') + '.');
+  if (r.changed) toast(r.changed + ' titels aangepast');
+}
 async function enrich(my) {
   try {
     await ensureGenres();
-    const extra = my.type === 'movie' ? 'credits,release_dates,videos,alternative_titles' : 'credits,content_ratings,videos,external_ids,alternative_titles';
+    const extra = my.type === 'movie' ? 'credits,release_dates,videos,alternative_titles,translations' : 'credits,content_ratings,videos,external_ids,alternative_titles,translations';
     const d = await api('/' + my.type + '/' + my.tmdbId, { append_to_response: extra, include_video_language: 'nl,en,null' });
     if (V !== my) return;
     const it = norm(d, my.type), k = my.type + '-' + my.tmdbId;
+    it.title = goodTitle(d) || it.title;
     it.d = compact(d, my.type);
     CACHE[k] = Object.assign(CACHE[k] || {}, it);
     const e = my.entryId && S.entries.find(x => x.id === my.entryId);
@@ -474,7 +520,8 @@ async function enrich(my) {
       if (!(e.genres || []).length && it.genres.length) e.genres = it.genres;
       if (!e.poster && it.poster) e.poster = it.poster;
       if (!e.rating && it.rating) e.rating = it.rating;
-      e.d = it.d; save();
+      e.d = it.d;
+      if (titleFix(e, d)) { e.u = Date.now(); commit(); } else save();
     }
   } catch (err) { if (V !== my) return; my.err = errMsg(err); }
   fillDetail();
@@ -995,6 +1042,7 @@ function vSettings() {
     '<label class="fld">Regio voor bioscooplijsten<select class="in" data-in="region">' + [['NL', 'Nederland'], ['BE', 'België'], ['DE', 'Duitsland'], ['GB', 'Verenigd Koninkrijk'], ['US', 'Verenigde Staten']].map(o => '<option value="' + o[0] + '"' + (s.region === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label></section>' +
     syncSection() +
     '<section class="panel2"><h2>Sorteren</h2>' + sortFields() + '</section>' +
+    '<section class="panel2"><h2>Titels</h2><p class="small" style="margin:0">Staat er een titel in een andere taal (bijvoorbeeld Hongaars), dan zoekt de app de Engelse titel erbij. Titels die je zelf hebt aangepast blijven staan.</p><button class="btn" data-a="fixtitles">Titels controleren</button><p class="small" id="tc-st" style="margin:0"></p></section>' +
     '<section class="panel2"><h2>Uiterlijk</h2><div class="fld">Accentkleur</div><div class="sw">' + ACCENTS.map(a => '<button style="background:' + a + '" class="' + (s.accent === a ? 'on' : '') + '" data-a="accent" data-c="' + a + '" aria-label="Kleur ' + a + '"></button>').join('') + '</div></section>' +
     '<section class="panel2"><h2>Info</h2><a class="link" href="#/over">Over Filmkast</a></section>';
 }
@@ -1207,7 +1255,9 @@ const A = {
     if (e.list === 'watch' && listById(dest)) { e.list = dest; toast('Verplaatst naar ' + listById(dest).name); }
     commit(); closeSheet(); fillDetail();
   },
-  tomove: d => { const e = S.entries.find(x => x.id === V.entryId); if (e && listById(d.l)) { e.list = d.l; e.u = Date.now(); commit(); toast('Verplaatst naar ' + listById(d.l).name); } closeSheet(); fillDetail(); },
+  fixtitles: () => { fixTitles(); },
+  seasonswatch: () => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.sst = Object.assign({}, e.sst); Object.keys(e.sst).forEach(n => { if (e.sst[n] === 'wish') e.sst[n] = 'watch'; }); e.u = Date.now(); commit(); toast('Verplaatst naar ' + (listById('watch') || {}).name); } closeSheet(); fillDetail(); },
+  tomove: d => { const e = S.entries.find(x => x.id === V.entryId); if (e && listById(d.l)) { e.list = d.l; if (d.l === 'watch' && e.ns) { e.ns = false; e.why = ''; } e.u = Date.now(); commit(); toast('Verplaatst naar ' + listById(d.l).name); } closeSheet(); fillDetail(); },
   allseasons: () => {
     const e = S.entries.find(x => x.id === V.entryId); if (!e) return;
     e.sn = seasonsOf(e, e.d || (CACHE[V.type + '-' + V.tmdbId] || {}).d).map(q => q.n).sort((a, b) => a - b); e.sst = {}; e.ns = false; e.u = Date.now();
@@ -1286,7 +1336,32 @@ const A = {
       '<label class="fld">Jaar<input id="ed-year" class="in" inputmode="numeric" value="' + esc(e.year) + '"></label>' +
       '<label class="fld">Genres (met komma ertussen)<input id="ed-genres" class="in" value="' + esc((e.genres || []).join(', ')) + '"></label>' +
       '<label class="fld">Beschrijving<textarea id="ed-over" class="in" style="min-height:140px">' + esc(e.overview) + '</textarea></label>' +
+      '<div class="pedit">' + (e.poster ? '<div class="pos"><img alt="" src="' + esc(posterSrc(e.poster, 'w185')) + '"></div>' : '<div class="pos">geen<br>afbeelding</div>') +
+      '<button class="btn" data-a="editposter">Poster wijzigen</button></div>' +
       '<div class="cols"><button class="btn ghost" data-a="closesheet">Annuleren</button><button class="btn pri" data-a="saveedit">Opslaan</button></div>');
+  },
+  editposter: async () => {
+    const e = S.entries.find(x => x.id === V.entryId); if (!e) return;
+    const t = $('#ed-title') && $('#ed-title').value.trim();
+    if (t) { e.title = t; e.year = $('#ed-year').value.trim(); e.overview = $('#ed-over').value.trim(); e.genres = $('#ed-genres').value.split(',').map(x => x.trim()).filter(Boolean); e.u = Date.now(); commit(); }
+    const shell = body => openSheet('<h3>Poster kiezen</h3>' + body +
+      '<label class="fld">Of plak een link naar een afbeelding<input id="pp-url" class="in" inputmode="url" placeholder="https://…"></label>' +
+      '<div class="cols"><button class="btn ghost" data-a="editdata">Terug</button><button class="btn pri" data-a="posterurl">Link gebruiken</button></div>');
+    if (!e.tmdbId || !hasKey()) { shell('<p class="small">Posters van TMDb zijn niet beschikbaar voor deze titel.</p>'); return; }
+    shell('<p class="small">Posters ophalen…</p>');
+    try {
+      const d = await api('/' + e.type + '/' + e.tmdbId + '/images', { include_image_language: 'nl,en,null' });
+      const ps = (d.posters || []).slice(0, 30);
+      const grid = ps.length ? '<div class="pgrid">' + ps.map(q => '<button data-a="setposter" data-p="' + esc(q.file_path) + '" class="' + (q.file_path === e.poster ? 'on' : '') + '"><img loading="lazy" alt="" src="' + IMG + 'w185' + esc(q.file_path) + '"><small>' + esc((q.iso_639_1 || 'zonder tekst').toUpperCase()) + '</small></button>').join('') + '</div>' : '<p class="small">Geen posters gevonden bij TMDb.</p>';
+      shell(grid);
+    } catch (err) { shell('<p class="small">' + esc(errMsg(err)) + '</p>'); }
+  },
+  setposter: d => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; e.poster = d.p; e.u = Date.now(); commit(); fillDetail(); A.editdata(); toast('Poster aangepast'); },
+  posterurl: () => {
+    const e = S.entries.find(x => x.id === V.entryId); if (!e) return;
+    const v = ($('#pp-url') && $('#pp-url').value || '').trim();
+    if (!/^https:\/\/\S+$/i.test(v)) { toast('Plak een link die met https:// begint'); return; }
+    e.poster = v; e.u = Date.now(); commit(); fillDetail(); A.editdata(); toast('Poster aangepast');
   },
   saveedit: () => {
     const e = S.entries.find(x => x.id === V.entryId); if (!e) return;
@@ -1389,7 +1464,10 @@ const IN = {
   ens: el => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.ns = el.checked; if (el.checked) e.seen = ''; e.u = Date.now(); commit(); fillDetail(); } },
   ewhy: el => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.why = el.value; e.u = Date.now(); commit(); } },
   eplat: el => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; const w = new Set(e.where || []); if (el.checked) w.add(el.dataset.k); else w.delete(el.dataset.k); e.where = [...w]; e.u = Date.now(); commit();
-    if (el.checked && e.list === 'wish' && listById('watch')) openSheet('<h3>Verplaatsen naar de ' + esc(listById('watch').name) + '?</h3><p>Deze titel is nu beschikbaar. Wil je hem naar de ' + esc(listById('watch').name) + ' verplaatsen?</p><div class="cols"><button class="btn ghost" data-a="closesheet">Nee</button><button class="btn pri" data-a="tomove" data-l="watch">Ja, verplaatsen</button></div>'); },
+    if (!el.checked || !listById('watch')) return;
+    const wn = esc(listById('watch').name), ask = a => openSheet('<h3>Verplaatsen naar de ' + wn + '?</h3><p>Deze titel is nu beschikbaar. Wil je hem naar de ' + wn + ' verplaatsen?</p><div class="cols"><button class="btn ghost" data-a="closesheet">Nee</button><button class="btn pri" ' + a + '>Ja, verplaatsen</button></div>');
+    if (e.list === 'wish' || (e.type === 'movie' && e.list === 'movies' && (e.ns || !e.seen))) ask('data-a="tomove" data-l="watch"');
+    else if (e.type === 'tv' && Object.values(e.sst || {}).includes('wish')) ask('data-a="seasonswatch"'); },
   edate: el => { const e = S.entries.find(x => x.id === V.entryId); if (e && el.value) { e.seen = el.value; e.u = Date.now(); commit(); } },
   enote: el => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.note = el.value; e.u = Date.now(); commit(); } },
   rename: el => { const l = listById(el.dataset.l); if (l && el.value.trim()) { l.name = el.value.trim(); l.u = Date.now(); commit(); } },
