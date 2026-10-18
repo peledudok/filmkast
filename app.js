@@ -242,6 +242,7 @@ function listItems() {
   const f = V.f, q = V.q.trim().toLowerCase();
   let a = S.entries.filter(e => inList(e, V.id));
   if (q) a = a.filter(e => (e.title + ' ' + (e.genres || []).join(' ') + ' ' + (e.tags || []).join(' ')).toLowerCase().includes(q));
+  if (f.type) a = a.filter(e => e.type === f.type);
   if (f.seen === 'seen') a = a.filter(isSeen);
   if (f.seen === 'part') a = a.filter(isPart);
   if (f.seen === 'unseen') a = a.filter(e => !isSeen(e) && !isPart(e));
@@ -255,17 +256,25 @@ function listItems() {
 }
 function vList(id) {
   if (!listById(id)) { location.replace('#/l/' + S.lists[0].id); return; }
-  V = { kind: 'list', id, q: '', sq: false, f: { seen: '', genre: '', tag: '', plat: '' } };
+  V = { kind: 'list', id, q: '', sq: false, f: { seen: '', genre: '', tag: '', plat: '', type: ((S.settings.typeSel || {})[id]) || '' } };
   renderList();
 }
 function renderList() {
   const L = listById(V.id), n = count(V.id);
   app.innerHTML = bar({ menu: true, title: L.name, sub: plural(n, 'titel', 'titels'), acts: [['togglesearch', 'search', 'Zoeken'], ['sheetfilter', 'filter', 'Filteren'], ['sheetsort', 'sort', 'Sorteren'], ['sheetmore', 'more', 'Meer']] }) +
     '<div class="tabs" role="tablist"><button role="tab" data-a="view" data-v="list" class="' + (S.settings.view === 'list' ? 'on' : '') + '">Lijst</button><button role="tab" data-a="view" data-v="tiles" class="' + (S.settings.view === 'tiles' ? 'on' : '') + '">Tegels</button></div>' +
+    segHtml() +
     (V.sq ? '<div class="pad" style="padding-top:10px"><input id="q" class="in" type="search" placeholder="Zoek in ' + esc(L.name) + '" value="' + esc(V.q) + '" data-in="q" autocomplete="off"></div>' : '') +
     '<div id="items"></div><button class="fab" data-a="add" aria-label="Titel toevoegen">' + ico('plus') + '</button>';
   fillItems();
   if (V.sq) { const q = $('#q'); q.focus(); }
+}
+function segHtml() {
+  if (V.id === 'movies' || V.id === 'tv') return '';
+  const all = S.entries.filter(e => inList(e, V.id));
+  const n = t => all.filter(e => e.type === t).length;
+  const b = (t, label, c) => '<button data-a="ftype" data-t="' + t + '" class="' + ((V.f.type || '') === t ? 'on' : '') + '">' + label + ' <small>' + c + '</small></button>';
+  return '<div class="seg">' + b('', 'Alles', all.length) + b('movie', 'Films', n('movie')) + b('tv', 'Series', n('tv')) + '</div>';
 }
 function fillItems() {
   const a = listItems(), f = V.f, active = f.seen || f.genre || f.tag || f.plat;
@@ -1154,7 +1163,8 @@ const A = {
   view: (d) => { S.settings.view = d.v; save(); renderList(); },
   togglesearch: () => { V.sq = !V.sq; if (!V.sq) { V.q = ''; if (V.kind === 'pub') { pubSearchReset(); return; } } if (V.kind === 'pub') renderPub(); else renderList(); },
   sheetfilter: sheetFilter, sheetsort: sheetSort, sheetmore: sheetMore,
-  clearfilter: () => { V.f = { seen: '', genre: '', tag: '', plat: '' }; closeSheet(); fillItems(); },
+  ftype: d => { V.f.type = d.t; S.settings.typeSel = Object.assign({}, S.settings.typeSel, { [V.id]: d.t }); save(); renderList(); },
+  clearfilter: () => { V.f = { seen: '', genre: '', tag: '', plat: '', type: V.f.type || '' }; closeSheet(); fillItems(); },
   setsort: d => { S.settings.sortKey = d.k; save(); sheetSort(); if (V.kind === 'list') fillItems(); },
   setdir: d => { S.settings.sortDir = d.d; save(); sheetSort(); if (V.kind === 'list') fillItems(); },
   add: () => { location.hash = '#/toevoegen/' + V.id; },

@@ -228,3 +228,7 @@ details.how ol{margin:8px 0 0;padding-left:22px;display:grid;gap:6px}
 .sctl{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
 .sctl .sst{width:auto;min-height:38px;font-size:14px;padding:4px 8px}
 .sctl .sdt{width:auto;min-height:36px;font-size:13px;padding:2px 6px}
+.seg{display:flex;gap:8px;padding:10px 16px 0}
+.seg button{flex:1;min-height:44px;border-radius:999px;border:1px solid var(--line);background:var(--s1);color:var(--mut);font:inherit;font-size:15px}
+.seg button small{opacity:.7}
+.seg .on{color:var(--on-acc);background:var(--acc);border-color:var(--acc)}
