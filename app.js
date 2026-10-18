@@ -243,6 +243,8 @@ function listItems() {
   let a = S.entries.filter(e => inList(e, V.id));
   if (q) a = a.filter(e => (e.title + ' ' + (e.genres || []).join(' ') + ' ' + (e.tags || []).join(' ')).toLowerCase().includes(q));
   if (f.type) a = a.filter(e => e.type === f.type);
+  if (f.year) a = a.filter(e => e.added && new Date(e.added).getFullYear() === +f.year);
+  if (f.age) { const lim = new Date(); lim.setMonth(lim.getMonth() - +f.age); a = a.filter(e => e.added && e.added < lim.getTime()); }
   if (f.seen === 'seen') a = a.filter(isSeen);
   if (f.seen === 'part') a = a.filter(isPart);
   if (f.seen === 'unseen') a = a.filter(e => !isSeen(e) && !isPart(e));
@@ -256,7 +258,7 @@ function listItems() {
 }
 function vList(id) {
   if (!listById(id)) { location.replace('#/l/' + S.lists[0].id); return; }
-  V = { kind: 'list', id, q: '', sq: false, f: { seen: '', genre: '', tag: '', plat: '', type: ((S.settings.typeSel || {})[id]) || '' } };
+  V = { kind: 'list', id, q: '', sq: false, f: { seen: '', genre: '', tag: '', plat: '', year: '', age: '', type: ((S.settings.typeSel || {})[id]) || '' } };
   renderList();
 }
 function renderList() {
@@ -277,7 +279,7 @@ function segHtml() {
   return '<div class="seg">' + b('', 'Alles', all.length) + b('movie', 'Films', n('movie')) + b('tv', 'Series', n('tv')) + '</div>';
 }
 function fillItems() {
-  const a = listItems(), f = V.f, active = f.seen || f.genre || f.tag || f.plat;
+  const a = listItems(), f = V.f, active = f.seen || f.genre || f.tag || f.plat || f.year || f.age;
   let h = active ? '<div class="activef"><span>Filter actief</span><button data-a="clearfilter">Wissen</button></div>' : '';
   if (!a.length) {
     const none = count(V.id) === 0;
@@ -1018,9 +1020,21 @@ function sheetFilter() {
   const genres = [...new Set(S.entries.filter(e => inList(e, V.id)).flatMap(e => e.genres || []))].sort((a, b) => a.localeCompare(b, 'nl'));
   const f = V.f;
   const tags = [...new Set(S.entries.filter(e => inList(e, V.id)).flatMap(e => e.tags || []))].sort((a, b) => a.localeCompare(b, 'nl'));
+  const here = S.entries.filter(e => inList(e, V.id));
+  const plats = PLAT.filter(q => here.some(e => (e.where || []).includes(q[0])) || f.plat === q[0]);
+  const op = (v, label) => '<option value="' + v + '"' + (f.seen === v ? ' selected' : '') + '>' + label + '</option>';
+  const seenSel = (V.id === 'wish' || V.id === 'watch') ? '' :
+    '<label class="fld">Gezien<select class="in" data-in="fseen"><option value="">Alles</option>' + op('seen', 'Gezien') + op('unseen', 'Nog niet gezien') +
+    (here.some(isPart) || f.seen === 'part' ? op('part', 'Deels gezien (series)') : '') + (here.some(e => e.ns) || f.seen === 'ns' ? op('ns', 'Bewust niet gezien') : '') + '</select></label>';
+  const platSel = plats.length ? '<label class="fld">Tags<select class="in" data-in="fplat"><option value="">Alle</option>' + plats.map(q => '<option value="' + q[0] + '"' + (f.plat === q[0] ? ' selected' : '') + '>' + q[1] + '</option>').join('') + '</select></label>' : '';
+  const years = [...new Set(here.filter(e => e.added).map(e => new Date(e.added).getFullYear()))].sort((a, b) => b - a);
+  const yearSel = years.length > 1 || f.year ? '<label class="fld">Toegevoegd in<select class="in" data-in="fyear"><option value="">Alle jaren</option>' + years.map(y => '<option' + (+f.year === y ? ' selected' : '') + '>' + y + '</option>').join('') + '</select></label>' : '';
+  const ageSel = '<label class="fld">' + (V.id === 'wish' || V.id === 'watch' ? 'Staat al langer op de lijst dan' : 'Staat al langer in je collectie dan') + '<select class="in" data-in="fage"><option value="">Geen beperking</option>' +
+    [[1, '1 maand'], [3, '3 maanden'], [6, '6 maanden'], [12, '1 jaar'], [24, '2 jaar'], [60, '5 jaar']].map(q => '<option value="' + q[0] + '"' + (+f.age === q[0] ? ' selected' : '') + '>' + q[1] + '</option>').join('') + '</select></label>';
   openSheet('<h3>Filteren</h3>' +
-    '<label class="fld">Gezien<select class="in" data-in="fseen"><option value="">Alles</option><option value="seen"' + (f.seen === 'seen' ? ' selected' : '') + '>Gezien</option><option value="unseen"' + (f.seen === 'unseen' ? ' selected' : '') + '>Nog niet gezien</option><option value="part"' + (f.seen === 'part' ? ' selected' : '') + '>Deels gezien (series)</option><option value="ns"' + (f.seen === 'ns' ? ' selected' : '') + '>Bewust niet gezien</option></select></label>' +
-    '<label class="fld">Tags<select class="in" data-in="fplat"><option value="">Overal</option>' + PLAT.map(q => '<option value="' + q[0] + '"' + (f.plat === q[0] ? ' selected' : '') + '>' + q[1] + '</option>').join('') + '</select></label>' +
+    seenSel +
+    platSel +
+    yearSel + ageSel +
     '<label class="fld">Genre<select class="in" data-in="fgenre"><option value="">Alle genres</option>' + genres.map(x => '<option' + (f.genre === x ? ' selected' : '') + '>' + esc(x) + '</option>').join('') + '</select></label>' +
     '<div class="cols"><button class="btn ghost" data-a="clearfilter">Wissen</button><button class="btn pri" data-a="closesheet">Klaar</button></div>');
 }
@@ -1164,7 +1178,7 @@ const A = {
   togglesearch: () => { V.sq = !V.sq; if (!V.sq) { V.q = ''; if (V.kind === 'pub') { pubSearchReset(); return; } } if (V.kind === 'pub') renderPub(); else renderList(); },
   sheetfilter: sheetFilter, sheetsort: sheetSort, sheetmore: sheetMore,
   ftype: d => { V.f.type = d.t; S.settings.typeSel = Object.assign({}, S.settings.typeSel, { [V.id]: d.t }); save(); renderList(); },
-  clearfilter: () => { V.f = { seen: '', genre: '', tag: '', plat: '', type: V.f.type || '' }; closeSheet(); fillItems(); },
+  clearfilter: () => { V.f = { seen: '', genre: '', tag: '', plat: '', year: '', age: '', type: V.f.type || '' }; closeSheet(); fillItems(); },
   setsort: d => { S.settings.sortKey = d.k; save(); sheetSort(); if (V.kind === 'list') fillItems(); },
   setdir: d => { S.settings.sortDir = d.d; save(); sheetSort(); if (V.kind === 'list') fillItems(); },
   add: () => { location.hash = '#/toevoegen/' + V.id; },
@@ -1354,6 +1368,8 @@ const IN = {
   },
   fgenre: el => { V.f.genre = el.value; fillItems(); },
   ftag: el => { V.f.tag = el.value; fillItems(); },
+  fyear: el => { V.f.year = el.value; fillItems(); },
+  fage: el => { V.f.age = el.value; fillItems(); },
   fplat: el => { V.f.plat = el.value; fillItems(); },
   elist: el => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.list = el.value; e.u = Date.now(); commit(); toast('Verplaatst naar ' + listById(el.value).name); } },
   eseen: el => {
