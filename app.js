@@ -163,12 +163,12 @@ const posterHtml = (it, sz) => it.poster
 function entryRow(e) {
   return '<a class="row" href="#/e/' + e.id + '">' + posterHtml(e) + '<div class="rb"><div class="rt"><b>' + esc(e.title) + '</b>' +
     (e.year ? ' <i>(' + esc(e.year) + ')</i>' : '') + '</div><div class="rg">' + esc((e.genres || []).join(' · ')) + '</div>' +
-    (e.seen ? '<div class="seen">Gezien: ' + fmtDate(e.seen) + '</div>' : '') +
+    (seenLabel(e) ? '<div class="seen">' + esc(seenLabel(e)) + '</div>' : '') +
     (V && V.kind === 'list' && e.list !== V.id && seasonNums(e, V.id).length ? '<div class="since">' + (seasonNums(e, V.id).length > 1 ? 'Seizoenen ' : 'Seizoen ') + seasonNums(e, V.id).join(', ') + '</div>' : '') +
     (e.list === 'wish' && e.added ? '<div class="since">Op lijst sinds ' + fmtDate(isoOf(e.added)) + ' · ' + ago(e.added) + '</div>' : '') + '</div></a>';
 }
 function entryTile(e) {
-  return '<a class="tile" href="#/e/' + e.id + '">' + posterHtml(e, 'w342') + '<span>' + esc(e.title) + '</span>' + (e.seen ? '<span class="done">Gezien</span>' : '') + '</a>';
+  return '<a class="tile" href="#/e/' + e.id + '">' + posterHtml(e, 'w342') + '<span>' + esc(e.title) + '</span>' + (isSeen(e) ? '<span class="done">Gezien</span>' : isPart(e) ? '<span class="done">Deels</span>' : '') + '</a>';
 }
 function tmdbRow(it, listId) {
   const owned = S.entries.filter(e => e.type === it.type && e.tmdbId === it.tmdbId);
@@ -242,8 +242,9 @@ function listItems() {
   const f = V.f, q = V.q.trim().toLowerCase();
   let a = S.entries.filter(e => inList(e, V.id));
   if (q) a = a.filter(e => (e.title + ' ' + (e.genres || []).join(' ') + ' ' + (e.tags || []).join(' ')).toLowerCase().includes(q));
-  if (f.seen === 'seen') a = a.filter(e => e.seen);
-  if (f.seen === 'unseen') a = a.filter(e => !e.seen);
+  if (f.seen === 'seen') a = a.filter(isSeen);
+  if (f.seen === 'part') a = a.filter(isPart);
+  if (f.seen === 'unseen') a = a.filter(e => !isSeen(e) && !isPart(e));
   if (f.genre) a = a.filter(e => (e.genres || []).includes(f.genre));
   if (f.tag) a = a.filter(e => (e.tags || []).includes(f.tag));
   if (f.plat) a = a.filter(e => (e.where || []).includes(f.plat));
@@ -393,6 +394,19 @@ function vDetail(type, id) {
   if (!(c && c.d && 'ss' in c.d)) enrich(V);
 }
 const seasonsOf = (e, d) => (e && Array.isArray(e.seasons)) ? e.seasons : ((d && d.ss) || []);
+const seasonTotal = e => seasonsOf(e, e.d).length;
+function isSeen(e) {
+  if (e.type !== 'tv') return !!e.seen;
+  const t = seasonTotal(e), n = (e.sn || []).length;
+  return t ? n >= t : !!e.seen || n > 0;
+}
+const isPart = e => e.type === 'tv' && (e.sn || []).length > 0 && !isSeen(e);
+function seenLabel(e) {
+  if (e.type !== 'tv') return e.seen ? 'Gezien: ' + fmtDate(e.seen) : '';
+  const t = seasonTotal(e), n = (e.sn || []).length;
+  if (isSeen(e)) return t > 1 ? 'Alle seizoenen gezien' : 'Gezien';
+  return n ? 'Gezien: ' + n + (t ? ' van ' + t : '') + ' ' + (t === 1 || (!t && n === 1) ? 'seizoen' : 'seizoenen') : '';
+}
 function certOf(d, type) {
   const reg = S.settings.region;
   if (type === 'movie') {
@@ -456,6 +470,7 @@ async function enrich(my) {
 }
 function fillDetail() {
   const e = V.entryId ? S.entries.find(x => x.id === V.entryId) : null;
+  if (e && e.type === 'tv' && e.seen && !(e.sn || []).length && seasonTotal(e)) { e.sn = seasonsOf(e, e.d).map(q => q.n); e.seen = ''; e.u = Date.now(); commit(); }
   if (V.entryId && !e) { location.replace('#/l/' + S.lists[0].id); return; }
   const c = V.tmdbId ? (CACHE[V.type + '-' + V.tmdbId] || {}) : {};
   const g = f => (e && e[f] && (!Array.isArray(e[f]) || e[f].length)) ? e[f] : (c[f] || (f === 'genres' ? [] : ''));
@@ -487,10 +502,10 @@ function fillDetail() {
   if (e) {
     h += '<section class="panel2 pcoll"><h2>In mijn collectie</h2>' +
       '<label class="fld">Lijst<select id="e-list" class="in" data-in="elist">' + S.lists.filter(l => l.id === e.list || !((e.type === 'tv' && l.id === 'movies') || (e.type === 'movie' && l.id === 'tv'))).map(l => '<option value="' + l.id + '"' + (l.id === e.list ? ' selected' : '') + '>' + esc(l.name) + '</option>').join('') + '</select></label>' +
-      '<div class="chkrow"><label class="chk"><input type="checkbox" data-in="eseen"' + (e.seen ? ' checked' : '') + '> Gezien</label>' +
+      '<div class="chkrow">' + (e.type === 'tv' ? (seenLabel(e) ? '<span class="small" style="align-self:center">' + esc(seenLabel(e)) + '</span>' : '') : '<label class="chk"><input type="checkbox" data-in="eseen"' + (e.seen ? ' checked' : '') + '> Gezien</label>') +
       '<label class="chk"><input type="checkbox" data-in="ens"' + (e.ns ? ' checked' : '') + '> Niet gezien</label></div>' +
       (e.ns ? '<label class="fld">Waarom niet gezien?<input class="in" data-in="ewhy" value="' + esc(e.why || '') + '" placeholder="Bijvoorbeeld: geen interesse, te eng"></label>' : '') +
-      (e.seen ? '<label class="fld">Datum gezien<input type="date" class="in" value="' + esc(/^\d{4}-/.test(e.seen) ? e.seen : '') + '" max="' + today() + '" data-in="edate"></label>' : '') +
+      (e.seen && e.type !== 'tv' ? '<label class="fld">Datum gezien<input type="date" class="in" value="' + esc(/^\d{4}-/.test(e.seen) ? e.seen : '') + '" max="' + today() + '" data-in="edate"></label>' : '') +
       '<div class="fold"><button class="foldh" data-a="toggletags" aria-expanded="' + (V.tagsOpen ? 'true' : 'false') + '"><span>Tags</span><small>' +
       esc((e.where || []).map(k => (PLAT.find(q => q[0] === k) || [])[1]).filter(Boolean).join(', ') || 'Geen gekozen') + '</small><i>' + (V.tagsOpen ? '▴' : '▾') + '</i></button>' +
       (V.tagsOpen ? '<div class="foldb"><div class="chkrow">' + PLAT.map(q => '<label class="chk"><input type="checkbox" data-in="eplat" data-k="' + q[0] + '"' + ((e.where || []).includes(q[0]) ? ' checked' : '') + '> ' + q[1] + '</label>').join('') + '</div>' +
@@ -516,8 +531,9 @@ function fillDetail() {
         '<div class="sb"><b>' + esc(q.name || 'Seizoen ' + q.n) + '</b><span>' + [q.eps ? plural(q.eps, 'aflevering', 'afleveringen') : '', q.date ? q.date.slice(0, 4) : ''].filter(Boolean).join(' · ') + '</span></div></a>' +
         (ed ? '<button class="ib" data-a="renameseason" data-n="' + q.n + '" aria-label="Naam wijzigen">' + ico('edit') + '</button><button class="ib" data-a="delseason" data-n="' + q.n + '" aria-label="Seizoen verwijderen">' + ico('trash') + '</button>'
           : (e ? '<div class="sctl"><label class="chk sgz"><input type="checkbox" data-in="eseason" data-n="' + q.n + '"' + ((e.sn || []).includes(q.n) ? ' checked' : '') + '> Gezien</label>' +
-            ((e.sn || []).includes(q.n) ? '' : '<select class="in sst" data-in="esst" data-n="' + q.n + '" aria-label="Seizoen op lijst"><option value="">Geen lijst</option>' +
-              ['watch', 'wish'].filter(id => listById(id)).map(id => '<option value="' + id + '"' + ((e.sst || {})[q.n] === id ? ' selected' : '') + '>' + esc(listById(id).name) + '</option>').join('') + '</select>') + '</div>' : '')) + '</div>').join('') : '<p class="small" style="margin:8px 0">Nog geen seizoenen. Voeg er een toe met de knop hierboven.</p>') + '</div>';
+            ((e.sn || []).includes(q.n) ? '<input type="date" class="in sdt" data-in="esdt" data-n="' + q.n + '" value="' + esc((e.sdt || {})[q.n] || '') + '" max="' + today() + '" aria-label="Datum gezien (mag leeg)">' : '<select class="in sst" data-in="esst" data-n="' + q.n + '" aria-label="Seizoen op lijst"><option value="">Geen lijst</option>' +
+              ['watch', 'wish'].filter(id => listById(id)).map(id => '<option value="' + id + '"' + ((e.sst || {})[q.n] === id ? ' selected' : '') + '>' + esc(listById(id).name) + '</option>').join('') + '</select>') + '</div>' : '')) + '</div>').join('') : '<p class="small" style="margin:8px 0">Nog geen seizoenen. Voeg er een toe met de knop hierboven.</p>') +
+        (e && !ed && list.length > 1 && (e.sn || []).length < list.length ? '<button class="btn wide" data-a="allseasons">Alle seizoenen gezien</button>' : '') + '</div>';
       h += '</section>';
     }
   }
@@ -847,6 +863,7 @@ function cleanEntry(x) {
     genres: Array.isArray(x.genres) ? x.genres.map(String) : [], seen: String(x.seen || ''), note: String(x.note || ''),
     seasons: Array.isArray(x.seasons) ? x.seasons.filter(q => q && +q.n > 0).map(q => ({ n: +q.n, name: String(q.name || ''), eps: +q.eps || 0, date: String(q.date || ''), poster: String(q.poster || '') })) : undefined,
     sn: Array.isArray(x.sn) ? x.sn.map(Number).filter(n => n > 0) : [],
+    sdt: x.sdt && typeof x.sdt === 'object' ? Object.keys(x.sdt).reduce((o, n) => { if (+n > 0 && /^\d{4}-\d{2}-\d{2}$/.test(x.sdt[n])) o[n] = x.sdt[n]; return o; }, {}) : {},
     sst: x.sst && typeof x.sst === 'object' ? Object.keys(x.sst).reduce((o, n) => { if (+n > 0 && ['watch', 'wish'].includes(x.sst[n])) o[n] = x.sst[n]; return o; }, {}) : {},
     tags: Array.isArray(x.tags) ? x.tags.map(String).filter(Boolean) : [], where: Array.isArray(x.where) ? x.where.map(String).filter(k => PLAT.some(q => q[0] === k)) : [], ns: !!x.ns, why: String(x.why || ''),
     added: +x.added || Date.now(), u: +x.u || 0
@@ -928,7 +945,7 @@ function sheetFilter() {
   const f = V.f;
   const tags = [...new Set(S.entries.filter(e => inList(e, V.id)).flatMap(e => e.tags || []))].sort((a, b) => a.localeCompare(b, 'nl'));
   openSheet('<h3>Filteren</h3>' +
-    '<label class="fld">Gezien<select class="in" data-in="fseen"><option value="">Alles</option><option value="seen"' + (f.seen === 'seen' ? ' selected' : '') + '>Gezien</option><option value="unseen"' + (f.seen === 'unseen' ? ' selected' : '') + '>Nog niet gezien</option><option value="ns"' + (f.seen === 'ns' ? ' selected' : '') + '>Bewust niet gezien</option></select></label>' +
+    '<label class="fld">Gezien<select class="in" data-in="fseen"><option value="">Alles</option><option value="seen"' + (f.seen === 'seen' ? ' selected' : '') + '>Gezien</option><option value="unseen"' + (f.seen === 'unseen' ? ' selected' : '') + '>Nog niet gezien</option><option value="part"' + (f.seen === 'part' ? ' selected' : '') + '>Deels gezien (series)</option><option value="ns"' + (f.seen === 'ns' ? ' selected' : '') + '>Bewust niet gezien</option></select></label>' +
     '<label class="fld">Tags<select class="in" data-in="fplat"><option value="">Overal</option>' + PLAT.map(q => '<option value="' + q[0] + '"' + (f.plat === q[0] ? ' selected' : '') + '>' + q[1] + '</option>').join('') + '</select></label>' +
     '<label class="fld">Genre<select class="in" data-in="fgenre"><option value="">Alle genres</option>' + genres.map(x => '<option' + (f.genre === x ? ' selected' : '') + '>' + esc(x) + '</option>').join('') + '</select></label>' +
     '<div class="cols"><button class="btn ghost" data-a="clearfilter">Wissen</button><button class="btn pri" data-a="closesheet">Klaar</button></div>');
@@ -1102,6 +1119,12 @@ const A = {
     commit(); closeSheet(); fillDetail();
   },
   tomove: d => { const e = S.entries.find(x => x.id === V.entryId); if (e && listById(d.l)) { e.list = d.l; e.u = Date.now(); commit(); toast('Verplaatst naar ' + listById(d.l).name); } closeSheet(); fillDetail(); },
+  allseasons: () => {
+    const e = S.entries.find(x => x.id === V.entryId); if (!e) return;
+    e.sn = seasonsOf(e, e.d || (CACHE[V.type + '-' + V.tmdbId] || {}).d).map(q => q.n).sort((a, b) => a - b); e.sst = {}; e.ns = false; e.u = Date.now();
+    if (e.list === 'watch' && listById('tv')) { e.list = 'tv'; toast('Verplaatst naar ' + listById('tv').name); }
+    commit(); fillDetail();
+  },
   editseasons: () => { V.seasonEdit = !V.seasonEdit; fillDetail(); },
   addseason: () => {
     const e = S.entries.find(x => x.id === V.entryId); if (!e) return;
@@ -1266,9 +1289,10 @@ const IN = {
     } else { e.seen = ''; e.u = Date.now(); commit(); fillDetail(); }
   },
   eadded: el => { const e = S.entries.find(x => x.id === V.entryId); if (e && el.value) { e.added = new Date(el.value + 'T12:00:00').getTime(); e.u = Date.now(); commit(); } },
-  eseason: el => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; const w = new Set(e.sn || []); const n = +el.dataset.n; if (el.checked) { w.add(n); if (e.sst) delete e.sst[n]; } else w.delete(n); e.sn = [...w].sort((a, b) => a - b); e.u = Date.now();
+  eseason: el => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; const w = new Set(e.sn || []); const n = +el.dataset.n; if (el.checked) { w.add(n); e.ns = false; if (e.sst) delete e.sst[n]; } else w.delete(n); e.sn = [...w].sort((a, b) => a - b); e.u = Date.now();
     if (el.checked && e.list === 'watch' && listById('tv')) { e.list = 'tv'; toast('Verplaatst naar ' + listById('tv').name); }
     commit(); fillDetail(); },
+  esdt: el => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; e.sdt = e.sdt || {}; if (el.value) e.sdt[el.dataset.n] = el.value; else delete e.sdt[el.dataset.n]; e.u = Date.now(); commit(); },
   esst: el => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; e.sst = e.sst || {}; if (el.value) e.sst[el.dataset.n] = el.value; else delete e.sst[el.dataset.n]; e.u = Date.now(); commit(); toast(el.value ? 'Seizoen ' + el.dataset.n + ' staat op ' + listById(el.value).name : 'Seizoen ' + el.dataset.n + ' staat op geen lijst'); },
   ens: el => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.ns = el.checked; if (el.checked) e.seen = ''; e.u = Date.now(); commit(); fillDetail(); } },
   ewhy: el => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.why = el.value; e.u = Date.now(); commit(); } },
