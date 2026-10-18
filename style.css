@@ -225,3 +225,5 @@ details.how ol{margin:8px 0 0;padding-left:22px;display:grid;gap:6px}
 .dl{display:flex;gap:8px}
 .pbar{height:10px;border-radius:5px;background:var(--s2);overflow:hidden}
 .pbar i{display:block;height:100%;background:var(--acc)}
+.sctl{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.sctl .sst{width:auto;min-height:38px;font-size:14px;padding:4px 8px}
