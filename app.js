@@ -625,7 +625,14 @@ function vBackup() {
     '<button class="btn" data-a="exportcsv">Alles als CSV voor Excel</button></section>' +
     '<section class="panel2"><h2>Back-up terugzetten</h2><p class="small" style="margin:0">Kies een eerder opgeslagen back-up (.json). Je kiest daarna of je samenvoegt of vervangt.</p>' +
     '<label class="btn" for="imp">Bestand kiezen</label><input id="imp" type="file" accept=".json,application/json" data-in="import" hidden></section>' +
-    '<section class="panel2"><h2>Importeren uit MovieMeter</h2><p class="small" style="margin:0">Heb je een CSV-export uit MovieMeter? De app zoekt de films bij TMDb op en zet ze in je lijsten.</p><a class="btn" href="#/import">CSV importeren</a></section>';
+    '<section class="panel2"><h2>Importeren uit MovieMeter</h2><p class="small" style="margin:0">Heb je een CSV-export uit MovieMeter? De app zoekt de films bij TMDb op en zet ze in je lijsten.</p><a class="btn" href="#/import">CSV importeren</a></section>' + skipSection();
+}
+function skipSection() {
+  const a = S.settings.impSkipped || [];
+  if (!a.length) return '';
+  return '<section class="panel2"><h2>Niet geïmporteerd (' + a.length + ')</h2><p class="small" style="margin:0">Deze titels heb je overgeslagen of zijn niet gevonden. Zoek ze zelf op via Toevoegen.</p>' +
+    '<div class="small" style="max-height:260px;overflow:auto">' + a.map(x => esc(x.t + (x.a ? ' (' + x.a.slice(0, 4) + ')' : '') + ' – ' + x.s)).join('<br>') + '</div>' +
+    '<button class="btn" data-a="skipcsv">Lijst downloaden (CSV)</button><button class="btn ghost" data-a="skipclear">Lijst wissen</button></section>';
 }
 /* ---------- import uit CSV (MovieMeter-export) ---------- */
 const IMPK = { Amazon: 'prime', Apple: 'apple', Disney: 'disney', HBO: 'hbo', Netflix: 'netflix', Pathe: 'pathe', SkyShowtime: 'sky', Videoland: 'vl', Oscar: 'oscar', GoldenGlobe: 'globe' };
@@ -718,11 +725,10 @@ async function matchOne(rec) {
   const cands = exact.concat(rest).slice(0, 6);
   if (exact.length) {
     const pl = exact.filter(c => !yr(c) || yr(c) <= ay + 1).sort((a, b) => (ay - (yr(a) || ay)) - (ay - (yr(b) || ay)));
-    if (exact.length === 1 && pl.length === 1) return { auto: pl[0], cands };
-    if (pl.length) {
-      const d0 = ay - (yr(pl[0]) || ay), d1 = pl[1] ? ay - (yr(pl[1]) || ay) : 99;
-      if (d0 <= 1 && d1 > 1) return { auto: pl[0], cands };
-    }
+    if (exact.length === 1) return { auto: exact[0], cands };
+    const pool = (pl.length ? pl : exact).slice().sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+    // alleen vragen als twee echte kanshebbers ongeveer even bekend zijn
+    if (pool.length === 1 || (pool[0].popularity || 0) >= 3 * (pool[1].popularity || 0)) return { auto: pool[0], cands };
   }
   return { cands };
 }
@@ -766,11 +772,12 @@ function renderImp() {
         esc((c.title || c.name || '') + ' (' + ((c.release_date || c.first_air_date || '').slice(0, 4) || '?') + ')') +
         ((c.original_title || c.original_name) && (c.original_title || c.original_name) !== (c.title || c.name) ? ' – ' + esc(c.original_title || c.original_name) : '') + '</button>').join('') + '</div>'
         : '<p class="small" style="margin:0">Niets gevonden bij TMDb.</p>') +
-      '<button class="btn ghost" data-a="impskip">Overslaan</button></section>';
+      '<button class="btn ghost" data-a="impskip">Overslaan</button>' +
+      '<button class="btn ghost" data-a="impautoall">De rest automatisch kiezen (' + (I.todo.length - I.ri) + ')</button></section>';
   } else if (I.phase === 'done') {
     h += '<section class="panel2"><h2>Klaar</h2><p style="margin:0"><b>' + plural(I.added, 'titel', 'titels') + '</b> toegevoegd.' + (I.dup ? ' ' + plural(I.dup, 'titel stond', 'titels stonden') + ' al in je collectie.' : '') + '</p>' +
       (I.skipped.length ? '<p class="small" style="margin:0">Niet geïmporteerd (' + I.skipped.length + '), voeg deze zelf toe:</p><div class="small" style="max-height:260px;overflow:auto">' + I.skipped.map(x => esc(x)).join('<br>') + '</div>' : '') +
-      '<a class="btn pri" href="#/l/movies">Naar mijn films</a></section>';
+      '<p class="small" style="margin:0">Deze lijst blijft bewaard onder Back-up en herstel.</p><a class="btn pri" href="#/l/movies">Naar mijn films</a></section>';
   }
   app.innerHTML = h;
 }
@@ -801,11 +808,11 @@ async function impRun() {
 }
 function impNext() { IMP.ri++; if (IMP.ri >= IMP.todo.length) impFinish(); else renderImp(); }
 function impFinish() {
-  const I = IMP; let added = 0, dup = 0; const skipped = [];
+  const I = IMP; let added = 0, dup = 0; const skipped = [], skipRecs = [];
   const lid = id => (listById(id) ? id : S.lists[0].id);
   I.recs.forEach(r => {
     const hit = r.pick || (r.res && r.res.auto);
-    if (!hit) { skipped.push(r.title + (r.added ? ' (' + r.added.slice(0, 4) + ')' : '')); return; }
+    if (!hit) { skipped.push(r.title + (r.added ? ' (' + r.added.slice(0, 4) + ')' : '')); skipRecs.push({ t: r.title, tr: r.tr, a: r.added, l: (listById(lid(r.list)) || {}).name || '', s: r.ns ? 'niet gezien' : r.seen ? 'gezien' : 'verlanglijst', n: r.note }); return; }
     const it = norm(hit, r.type);
     if (S.entries.some(e => e.type === r.type && e.tmdbId === it.tmdbId)) { dup++; return; }
     const ts = r.added ? new Date(r.added + 'T12:00:00').getTime() : Date.now();
@@ -815,6 +822,7 @@ function impFinish() {
     });
     added++;
   });
+  S.settings.impSkipped = skipRecs;
   commit();
   I.phase = 'done'; I.added = added; I.dup = dup; I.skipped = skipped;
   renderImp();
@@ -1158,7 +1166,14 @@ const A = {
   impstart: () => impRun(),
   impcancel: () => { if (IMP) IMP.cancel = true; },
   imppick: d => { const r = IMP.recs[IMP.todo[IMP.ri]]; r.pick = r.res.cands.find(c => String(c.id) === d.id) || null; impNext(); },
+  skipcsv: () => {
+    const q = v => '"' + String(v || '').replace(/"/g, '""') + '"';
+    const rows = [['Titel', 'Vertaalde titel', 'Toegevoegd', 'Hoort in', 'Status', 'Notitie']].concat((S.settings.impSkipped || []).map(x => [x.t, x.tr, x.a, x.l, x.s, x.n]));
+    download('niet-geimporteerd.csv', '\ufeff' + rows.map(r => r.map(q).join(';')).join('\n'), 'text/csv');
+  },
+  skipclear: () => { S.settings.impSkipped = []; save(); vBackup(); },
   impskip: () => impNext(),
+  impautoall: () => { const I = IMP; for (; I.ri < I.todo.length; I.ri++) { const r = I.recs[I.todo[I.ri]]; r.pick = r.res.cands[0] || null; } impFinish(); },
   syncnow: () => { if (!syncOn()) { toast('Vul eerst je toegangscode in'); return; } syncNow(false); },
   savenew: () => {
     const title = $('#n-title').value.trim();
