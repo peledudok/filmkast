@@ -81,7 +81,7 @@ const inList = (e, id) => e.list === id || seasonNums(e, id).length > 0;
 const count = id => S.entries.filter(e => inList(e, id)).length;
 
 /* ---------- TMDb ---------- */
-const BUILD = '19 oktober 2026, 15:15';
+const BUILD = '19 oktober 2026, 15:55';
 const CACHE = {};
 const cache = it => { CACHE[it.type + '-' + it.tmdbId] = it; return it; };
 async function api(path, params) {
@@ -366,7 +366,7 @@ function fillAdd() {
   let h = '';
   if (V.err === 'GEEN_SLEUTEL') h = '<div class="notice"><b>API-sleutel nodig om te zoeken</b><span>Vul je gratis TMDb-sleutel in bij Instellingen, of voeg een titel handmatig toe.</span><a class="btn pri" href="#/instellingen">Naar instellingen</a>' + manual + '</div>';
   else if (V.err) h = '<div class="notice">' + esc(V.err) + '</div>';
-  else if (V.q.trim().length < 2) h = '<div class="notice"><span>Typ minstens twee letters om op TMDb te zoeken.</span>' + manual + '</div>';
+  else if (V.q.trim().length < 2) h = '<div class="notice"><span>Typ minstens twee letters om op TMDb te zoeken. Tip: voeg een jaartal toe (bijvoorbeeld Black 2015), of plak een IMDb-nummer (tt…) of TMDb-link.</span>' + manual + '</div>';
   else if (V.busy) h = '<div class="spin">Zoeken…</div>';
   else if (!V.items.length) h = '<div class="notice"><b>Niets gevonden</b>' + manual + '</div>';
   else h = '<div class="rows">' + V.items.map(it => tmdbRow(it, V.listId)).join('') + '</div><div class="pad" style="padding-bottom:40px">' + manual + '</div>';
@@ -400,9 +400,22 @@ function addSearch() {
   addT = setTimeout(async () => {
     try {
       await ensureGenres();
-      const d = await api('/search/multi', { query: q, include_adult: 'false' });
+      const mu = q.match(/themoviedb\.org\/(movie|tv)\/(\d+)/i), im = q.match(/\btt\d{6,}\b/i), ym = q.match(/^(.*\S)\s+((?:19|20)\d{2})$/);
+      let items = [];
+      if (mu) { items = [cache(norm(await api('/' + mu[1].toLowerCase() + '/' + mu[2]), mu[1].toLowerCase()))]; }
+      else if (im) {
+        const r = await api('/find/' + im[0], { external_source: 'imdb_id' });
+        items = (r.movie_results || []).map(x => cache(norm(x, 'movie'))).concat((r.tv_results || []).map(x => cache(norm(x, 'tv'))));
+      } else if (ym) {
+        const [m, t] = await Promise.all([api('/search/movie', { query: ym[1], year: ym[2], include_adult: 'false' }), api('/search/tv', { query: ym[1], first_air_date_year: ym[2], include_adult: 'false' })]);
+        items = (m.results || []).map(x => cache(norm(x, 'movie'))).concat((t.results || []).map(x => cache(norm(x, 'tv'))));
+      }
+      if (!items.length && !mu && !im) {
+        const d = await api('/search/multi', { query: q, include_adult: 'false' });
+        items = (d.results || []).filter(r => r.media_type === 'movie' || r.media_type === 'tv').map(r => cache(norm(r)));
+      }
       if (V !== my) return;
-      my.items = (d.results || []).filter(r => r.media_type === 'movie' || r.media_type === 'tv').map(r => cache(norm(r))); my.err = '';
+      my.items = items; my.err = '';
     } catch (e) { if (V !== my) return; my.err = errMsg(e); }
     my.busy = false; fillAdd();
   }, 400);
