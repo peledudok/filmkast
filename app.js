@@ -136,6 +136,18 @@ function addEntry(item, listId) {
   S.entries.push(e); commit(); return e;
 }
 
+function sheetAdd(k) {
+  const it = CACHE[k], L = listById(V.listId); if (!it || !L) return;
+  const mv = it.type === 'movie', pre = mv && L.id === 'movies' ? 'seen' : '';
+  openSheet('<h3>Toevoegen aan ' + esc(L.name) + '</h3><p class="small" style="margin-top:0"><b>' + esc(it.title) + '</b>' + (it.year ? ' (' + esc(it.year) + ')' : '') + '</p>' +
+    (mv ? '<label class="fld">Status<select id="ad-st" class="in" data-in="adst"><option value="">Nog niets aangegeven</option><option value="seen"' + (pre ? ' selected' : '') + '>Gezien</option><option value="ns">Bewust niet gezien</option></select></label>' +
+      '<label class="fld" id="ad-dw"' + (pre ? '' : ' hidden') + '>Datum gezien (leeg laten = onbekend)<input id="ad-date" type="date" class="in" value="' + today() + '" max="' + today() + '"></label>' +
+      '<label class="fld" id="ad-yw" hidden>Waarom niet gezien? (mag leeg)<input id="ad-why" class="in" placeholder="Bijvoorbeeld: geen interesse"></label>' : '') +
+    '<div class="fld">Tags</div><div class="chkrow">' + PLAT.map(q => '<label class="chk"><input type="checkbox" class="ad-pl" data-k="' + q[0] + '"> ' + q[1] + '</label>').join('') + '</div>' +
+    (it.type === 'tv' ? '<p class="small">Seizoenen geef je aan op de pagina van de serie.</p>' : '') +
+    '<div class="cols"><button class="btn ghost" data-a="closesheet">Annuleren</button><button class="btn pri" data-a="addconfirm" data-k="' + k + '">Toevoegen</button></div>');
+}
+
 /* ---------- weergave-hulpjes ---------- */
 const I = {
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
@@ -1231,7 +1243,19 @@ const A = {
   setdir: d => { S.settings.sortDir = d.d; save(); sheetSort(); if (V.kind === 'list') fillItems(); },
   add: () => { location.hash = '#/toevoegen/' + V.id; },
   addres: d => {
-    if (V.kind === 'add') { const e = addEntry(CACHE[d.k], V.listId); if (e) { toast('Toegevoegd aan ' + listById(V.listId).name); refreshRows(); } } else sheetPick(d.k);
+    if (V.kind === 'add') sheetAdd(d.k); else sheetPick(d.k);
+  },
+  addconfirm: d => {
+    const it = CACHE[d.k]; if (!it) { closeSheet(); return; }
+    const e = addEntry(it, V.listId); if (!e) { closeSheet(); return; }
+    const st = ($('#ad-st') || {}).value || '';
+    if (it.type === 'movie') {
+      if (st === 'seen') e.seen = ($('#ad-date').value || '').trim() || 'onbekend';
+      else if (st === 'ns') { e.ns = true; e.why = ($('#ad-why').value || '').trim(); }
+    }
+    e.where = [...document.querySelectorAll('#sheet .ad-pl:checked')].map(x => x.dataset.k);
+    e.u = Date.now(); commit(); closeSheet();
+    toast('Toegevoegd aan ' + listById(V.listId).name); refreshRows();
   },
   pick: d => { const e = addEntry(CACHE[d.k], d.l); if (e) { toast('Toegevoegd aan ' + listById(d.l).name); closeSheet(); refreshRows(); } },
   pickdetail: d => { const e = addEntry(CACHE[V.type + '-' + V.tmdbId], d.l); if (e) { toast('Toegevoegd aan ' + listById(d.l).name); location.replace('#/e/' + e.id); } },
@@ -1447,6 +1471,7 @@ const IN = {
   fage: el => { V.f.age = el.value; fillItems(); },
   fplat: el => { V.f.plat = el.value; fillItems(); },
   elist: el => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.list = el.value; e.u = Date.now(); commit(); toast('Verplaatst naar ' + listById(el.value).name); } },
+  adst: el => { const a = $('#ad-dw'), b = $('#ad-yw'); if (a) a.hidden = el.value !== 'seen'; if (b) b.hidden = el.value !== 'ns'; },
   eseen: el => {
     const e = S.entries.find(x => x.id === V.entryId); if (!e) return;
     if (el.checked) {
