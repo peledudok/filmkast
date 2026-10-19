@@ -81,7 +81,7 @@ const inList = (e, id) => e.list === id || seasonNums(e, id).length > 0;
 const count = id => S.entries.filter(e => inList(e, id)).length;
 
 /* ---------- TMDb ---------- */
-const BUILD = '19 oktober 2026, 20:00';
+const BUILD = '20 oktober 2026, 01:30';
 const CACHE = {};
 const cache = it => { CACHE[it.type + '-' + it.tmdbId] = it; return it; };
 async function api(path, params) {
@@ -179,6 +179,7 @@ function entryRow(e) {
     (e.year ? ' <i>(' + esc(e.year) + ')</i>' : '') + '</div><div class="rg">' + esc((e.genres || []).join(' · ')) + '</div>' +
     (seenLabel(e) ? '<div class="seen">' + esc(seenLabel(e)) + '</div>' : (V && V.kind === 'list' && (V.id === 'movies' || V.id === 'tv') && e.list === V.id ? '<div class="seen no">Niet gezien</div>' : '')) +
     (V && V.kind === 'list' && e.list !== V.id && seasonNums(e, V.id).length ? '<div class="since">' + (seasonNums(e, V.id).length > 1 ? 'Seizoenen ' : 'Seizoen ') + seasonNums(e, V.id).join(', ') + '</div>' : '') +
+    ((e.list === 'wish' || e.list === 'watch') ? wpChip(e) : '') +
     (e.list === 'wish' && e.added ? '<div class="since">Op lijst sinds ' + fmtDate(isoOf(e.added)) + ' · ' + ago(e.added) + '</div>' : '') + '</div></a>';
 }
 function entryTile(e) {
@@ -683,6 +684,7 @@ function fillDetail() {
   } else {
     h += dsec2('Verschijningsdatum', esc(rel), 'Speelduur', d && d.runtime ? d.runtime + ' min' : '--');
   }
+  if (V.tmdbId && hasKey()) h += '<section class="dsec" id="wp-sec"><h2>Waar te zien</h2><div class="spin">Laden…</div></section>';
   if (d && d.altv === 2 && d.alt && d.alt.length) {
     const nk = x => String(x).toLowerCase().replace(/[^a-z0-9]+/g, '');
     const seenT = new Set([nk(title), nk(d.orig || '')]);
@@ -714,6 +716,7 @@ function fillDetail() {
   const keep = window.scrollY;
   app.innerHTML = h;
   window.scrollTo(0, keep);
+  if (V.tmdbId && hasKey()) wpLoad({ id: e ? e.id : '', type: V.type, tmdbId: V.tmdbId, title: title });
 }
 
 /* seizoen */
@@ -1280,6 +1283,76 @@ function doImport(mode) {
 }
 
 /* instellingen */
+/* Streamingdiensten (TMDb / JustWatch) */
+const SVC = [['netflix', /netflix/i], ['prime', /prime video|amazon prime/i], ['disney', /disney/i], ['apple', /apple tv/i], ['hbo', /\bmax\b|hbo/i], ['sky', /skyshowtime/i], ['vl', /videoland/i], ['npo', /npo/i], ['pathe', /path[eé]/i]];
+const WPK = 'filmkast.wp';
+let WP = (() => { try { return JSON.parse(localStorage.getItem(WPK)) || {}; } catch (e) { return {}; } })();
+function wpSave() { try { localStorage.setItem(WPK, JSON.stringify(WP)); } catch (e) { } }
+const wpKey = e => e.type + '-' + e.tmdbId;
+const myPlat = () => S.settings.myPlat || [];
+const platName = k => (PLAT.find(q => q[0] === k) || [])[1] || k;
+async function wpFetch(type, id) {
+  const r = await api('/' + type + '/' + id + '/watch/providers');
+  const x = (r.results || {})[S.settings.region || 'NL'] || {};
+  const nm = a => (a || []).map(q => q.provider_name);
+  const str = [...new Set([...nm(x.flatrate), ...nm(x.free), ...nm(x.ads)])];
+  const k = [...new Set(str.map(n => (SVC.find(q => q[1].test(n)) || [])[0]).filter(Boolean))];
+  return { t: Date.now(), s: str, k, r: nm(x.rent), b: nm(x.buy) };
+}
+function wpMine(e) { const w = WP[wpKey(e)]; return [...new Set([...(w ? w.k : []), ...(e.where || []).filter(k => SVC.some(q => q[0] === k))])].filter(k => myPlat().includes(k)); }
+let wpBusy = false, wpLast = 0;
+async function wpScan(force) {
+  if (wpBusy || !hasKey() || !myPlat().length) return;
+  wpBusy = true; wpLast = Date.now();
+  const todo = S.entries.filter(e => e.tmdbId && (e.list === 'watch' || e.list === 'wish' || inList(e, 'watch') || inList(e, 'wish')))
+    .filter(e => force || !WP[wpKey(e)] || Date.now() - WP[wpKey(e)].t > 864e5)
+    .sort((a, b) => ((WP[wpKey(a)] || {}).t || 0) - ((WP[wpKey(b)] || {}).t || 0)).slice(0, 400);
+  const fresh = []; let i = 0, done = 0;
+  const worker = async () => {
+    while (i < todo.length) {
+      const e = todo[i++], key = wpKey(e);
+      try {
+        const prev = WP[key], w = await wpFetch(e.type, e.tmdbId);
+        const was = prev ? prev.k : null;
+        const add = w.k.filter(k => myPlat().includes(k) && was && !was.includes(k));
+        if (add.length) { w.nt = Date.now(); w.nk = add; fresh.push(e.title + ' (' + add.map(platName).join(', ') + ')'); }
+        else if (prev && prev.nt) { w.nt = prev.nt; w.nk = prev.nk; }
+        WP[key] = w;
+      } catch (err) { if (String(err.message) === 'SLEUTEL_ONGELDIG') return; }
+      done++;
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  wpSave(); wpBusy = false;
+  if (V && V.kind === 'list' && (V.id === 'watch' || V.id === 'wish')) fillItems();
+  if (fresh.length) toast(fresh.length === 1 ? 'Nu beschikbaar: ' + fresh[0] : fresh.length + ' titels nu beschikbaar op jouw diensten');
+  const st = $('#wp-st'); if (st) st.textContent = 'Klaar: ' + done + ' titels gecontroleerd' + (fresh.length ? ', ' + fresh.length + ' nieuw beschikbaar' : '') + '.';
+}
+function wpChip(e) {
+  const m = wpMine(e); if (!m.length) return '';
+  const w = WP[wpKey(e)] || {}, nw = w.nt && Date.now() - w.nt < 6048e5;
+  return '<div class="svc">' + (nw ? 'Nieuw: ' : '') + 'Nu op ' + esc(m.map(platName).join(', ')) + '</div>';
+}
+function wpHtml(e0) {
+  const w = WP[wpKey(e0)]; if (!w) return '<div class="spin">Laden…</div>';
+  const mine = myPlat(), has = e0.id ? S.entries.find(x => x.id === e0.id) : null;
+  const names = w.s.map(n => { const k = (SVC.find(q => q[1].test(n)) || [])[0]; return k && mine.includes(k) ? '<b class="mine">' + esc(n) + ' ✓</b>' : esc(n); });
+  let h = '<div class="dv">' + (names.length ? 'Streamen: ' + names.join(', ') : 'Geen streamingdienst gevonden in Nederland.') + '</div>';
+  if (w.r.length) h += '<div class="dv small">Huren: ' + w.r.slice(0, 6).map(esc).join(', ') + '</div>';
+  if (w.b.length) h += '<div class="dv small">Kopen: ' + w.b.slice(0, 6).map(esc).join(', ') + '</div>';
+  if (has && (has.where || []).length) h += '<div class="dv small">Jouw tags: ' + has.where.map(k => esc(platName(k))).join(', ') + '</div>';
+  h += '<p class="small" style="margin:6px 0 0"><a class="link" href="https://www.justwatch.com/nl/zoeken?q=' + encodeURIComponent(e0.title || '') + '" target="_blank" rel="noopener">Controleer op JustWatch ›</a></p>' +
+    '<p class="small" style="margin:6px 0 0">' + (mine.length ? '' : 'Stel bij <a class="link" href="#/instellingen">Instellingen</a> in welke diensten je hebt. ') + 'Gegevens van JustWatch via TMDb; kunnen een tijd achterlopen.</p>';
+  return h;
+}
+function wpLoad(e0) {
+  if (!hasKey()) return;
+  const key = e0.type + '-' + e0.tmdbId, w = WP[key], my = V;
+  const show = () => { if (V !== my) return; const el = $('#wp-sec'); if (el) el.innerHTML = '<h2>Waar te zien</h2>' + wpHtml(e0); };
+  show();
+  if (w && Date.now() - w.t < 864e5) return;
+  wpFetch(e0.type, e0.tmdbId).then(n => { const prev = WP[key]; if (prev && prev.nt) { n.nt = prev.nt; n.nk = prev.nk; } WP[key] = n; wpSave(); show(); }).catch(() => { });
+}
 function vSettings() {
   V = { kind: 'settings' };
   const s = S.settings;
@@ -1293,6 +1366,7 @@ function vSettings() {
     syncSection() +
     '<section class="panel2"><h2>Sorteren</h2>' + sortFields() + '</section>' +
     '<section class="panel2"><h2>Titels</h2><p class="small" style="margin:0">Zoekt de Engelse titel erbij als er een titel in een andere taal staat (bijvoorbeeld Hongaars) en haalt de originele titels op, zodat je ook op de titel tussen haakjes kunt zoeken. Titels die je zelf hebt aangepast blijven staan.</p><button class="btn" data-a="fixtitles">Titels controleren en originele titels ophalen</button><p class="small" id="tc-st" style="margin:0"></p></section>' +
+    '<section class="panel2"><h2>Mijn streamingdiensten</h2><p class="small" style="margin:0">Vink aan welke diensten je hebt. In de Kijklijst en Verlanglijst zie je dan bij een titel "Nu op …", en je ziet het als een titel nieuw op een van jouw diensten komt. De app controleert dat bij het openen, hooguit één keer per dag.</p><div class="chkrow">' + SVC.map(q => '<label class="chk"><input type="checkbox" data-in="myplat" data-k="' + q[0] + '"' + (myPlat().includes(q[0]) ? ' checked' : '') + '> ' + platName(q[0]) + '</label>').join('') + '</div><button class="btn" data-a="wpscan">Nu controleren</button><p class="small" id="wp-st" style="margin:0"></p></section>' +
     '<section class="panel2"><h2>Uiterlijk</h2><div class="fld">Accentkleur</div><div class="sw">' + ACCENTS.map(a => '<button style="background:' + a + '" class="' + (s.accent === a ? 'on' : '') + '" data-a="accent" data-c="' + a + '" aria-label="Kleur ' + a + '"></button>').join('') + '</div></section>' +
     '<section class="panel2"><h2>Info</h2><a class="link" href="#/over">Over Filmkast</a></section>';
 }
@@ -1469,6 +1543,7 @@ async function syncNow(auto) {
 
 /* ---------- gebeurtenissen ---------- */
 const A = {
+  wpscan: () => { const st = $('#wp-st'); if (!hasKey()) { if (st) st.textContent = 'Vul eerst je TMDb-sleutel in.'; return; } if (!myPlat().length) { if (st) st.textContent = 'Vink eerst minstens één dienst aan.'; return; } if (st) st.textContent = 'Bezig met controleren…'; wpScan(true); },
   drawer: openDrawer, closedrawer: closeDrawer, closesheet: closeSheet,
   back: () => { if (history.length > 1) history.back(); else location.hash = '#/l/' + S.lists[0].id; },
   confirmok: () => { const f = CONFIRM; CONFIRM = null; closeSheet(); if (f) f(); },
@@ -1708,6 +1783,7 @@ const A = {
 function pubSearchReset() { V.items = []; V.page = 0; V.total = 1; V.err = ''; renderPub(); loadMore(); }
 let pubT;
 const IN = {
+  myplat: el => { const a = new Set(myPlat()); if (el.checked) a.add(el.dataset.k); else a.delete(el.dataset.k); S.settings.myPlat = [...a]; save(); },
   q: el => { V.q = el.value; fillItems(); },
   pq: el => {
     V.q = el.value; clearTimeout(pubT);
@@ -1785,6 +1861,8 @@ applyAccent();
 if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) navigator.serviceWorker.register('sw.js').catch(() => { });
 route();
 if (syncOn()) syncNow(true);
+setTimeout(() => wpScan(false), 3000);
 document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && Date.now() - wpLast > 36e5) wpScan(false);
   if (document.visibilityState === 'visible' && syncOn() && Date.now() - lastSync > 30000) syncNow(true);
 });
