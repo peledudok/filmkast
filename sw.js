@@ -1,4 +1,4 @@
-const C = 'filmkast-v1';
+const C = 'filmkast-v2';
 const IMGC = 'filmkast-img-v1';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
@@ -22,7 +22,7 @@ self.addEventListener('fetch', e => {
     return;
   }
   if (u.origin === location.origin) {
-    e.respondWith(fetch(r).then(res => { const cp = res.clone(); caches.open(C).then(c => c.put(r, cp)); return res; })
+    e.respondWith(fetch(r, { cache: 'no-store' }).then(res => { const cp = res.clone(); caches.open(C).then(c => c.put(r, cp)); return res; })
       .catch(() => caches.match(r).then(m => m || caches.match('index.html'))));
   }
 });
