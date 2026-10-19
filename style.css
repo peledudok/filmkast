@@ -238,3 +238,9 @@ details.how ol{margin:8px 0 0;padding-left:22px;display:grid;gap:6px}
 .pgrid button{background:var(--s1);border:2px solid transparent;border-radius:10px;padding:4px;color:var(--mut);font:inherit;display:flex;flex-direction:column;gap:4px;align-items:center}
 .pgrid button.on{border-color:var(--acc)}
 .pgrid img{width:100%;border-radius:6px;display:block}
+
+#alpha{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:20;display:flex;flex-direction:column;align-items:center;width:22px;padding:4px 0;max-height:calc(100vh - 220px);touch-action:none;user-select:none;-webkit-user-select:none;background:color-mix(in srgb,var(--bg) 70%,transparent);border-radius:11px 0 0 11px;justify-content:space-between}
+#alpha b{font:600 10px/1 system-ui,sans-serif;color:var(--acc);flex:1;display:flex;align-items:center;justify-content:center;width:100%;min-height:0}
+#alpha b.off{opacity:.3}
+#alpha.drag{background:color-mix(in srgb,var(--bg) 92%,transparent)}
+.rows>*,.tiles>*{scroll-margin-top:120px}
