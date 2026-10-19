@@ -731,7 +731,7 @@ function skipSection() {
   const a = S.settings.impSkipped || [];
   if (!a.length) return '';
   return '<section class="panel2"><h2>Niet geïmporteerd (' + a.length + ')</h2><p class="small" style="margin:0">Deze titels heb je overgeslagen of zijn niet gevonden. Zoek ze zelf op via Toevoegen.</p>' +
-    '<div class="small" style="max-height:260px;overflow:auto">' + a.map(x => esc(x.t + (x.a ? ' (' + x.a.slice(0, 4) + ')' : '') + ' – ' + x.s)).join('<br>') + '</div>' +
+    '<div class="small" style="max-height:260px;overflow:auto">' + a.map(x => esc(x.t + (x.a ? ' (' + x.a.slice(0, 4) + ')' : '') + ' – ' + x.s + ' · ' + (x.src || 'MovieMeter'))).join('<br>') + '</div>' +
     '<button class="btn" data-a="skipcsv">Lijst downloaden (CSV)</button><button class="btn ghost" data-a="skipclear">Lijst wissen</button></section>';
 }
 /* ---------- import uit CSV (MovieMeter-export) ---------- */
@@ -975,7 +975,7 @@ function impFinish() {
   const lid = id => (listById(id) ? id : S.lists[0].id);
   I.recs.forEach(r => {
     const hit = r.pick || (r.res && r.res.auto);
-    if (!hit) { skipped.push(r.title + (r.added ? ' (' + r.added.slice(0, 4) + ')' : '')); skipRecs.push({ t: r.title, tr: r.tr, a: r.added, l: (listById(lid(r.list)) || {}).name || '', s: r.ns ? 'niet gezien' : r.seen ? 'gezien' : 'verlanglijst', n: r.note }); return; }
+    if (!hit) { skipped.push(r.title + (r.added ? ' (' + r.added.slice(0, 4) + ')' : '')); skipRecs.push({ src: r.xml ? 'Movie Collection' : 'MovieMeter', t: r.title, tr: r.tr, a: r.added, l: (listById(lid(r.list)) || {}).name || '', s: r.ns ? 'niet gezien' : r.seen ? 'gezien' : 'verlanglijst', n: r.note }); return; }
     const it = norm(hit, r.type);
     if (S.entries.some(e => e.type === r.type && e.tmdbId === it.tmdbId)) { dup++; return; }
     const ts = r.added ? new Date(r.added + 'T12:00:00').getTime() : Date.now();
@@ -987,7 +987,8 @@ function impFinish() {
     });
     added++;
   });
-  S.settings.impSkipped = skipRecs;
+  const srcNow = I.recs.some(r => r.xml) ? 'Movie Collection' : 'MovieMeter';
+  S.settings.impSkipped = (S.settings.impSkipped || []).filter(x => (x.src || 'MovieMeter') !== srcNow).concat(skipRecs);
   commit();
   I.phase = 'done'; I.added = added; I.dup = dup; I.skipped = skipped;
   renderImp();
@@ -1402,7 +1403,7 @@ const A = {
   imppick: d => { const r = IMP.recs[IMP.todo[IMP.ri]]; r.pick = r.res.cands.find(c => String(c.id) === d.id) || null; impNext(); },
   skipcsv: () => {
     const q = v => '"' + String(v || '').replace(/"/g, '""') + '"';
-    const rows = [['Titel', 'Vertaalde titel', 'Toegevoegd', 'Hoort in', 'Status', 'Notitie']].concat((S.settings.impSkipped || []).map(x => [x.t, x.tr, x.a, x.l, x.s, x.n]));
+    const rows = [['Titel', 'Vertaalde titel', 'Toegevoegd', 'Hoort in', 'Status', 'Notitie', 'Bron']].concat((S.settings.impSkipped || []).map(x => [x.t, x.tr, x.a, x.l, x.s, x.n, x.src || 'MovieMeter']));
     download('niet-geimporteerd.csv', '\ufeff' + rows.map(r => r.map(q).join(';')).join('\n'), 'text/csv');
   },
   skipclear: () => { S.settings.impSkipped = []; save(); vBackup(); },
