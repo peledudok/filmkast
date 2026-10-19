@@ -294,7 +294,9 @@ function segHtml() {
 }
 function fillItems() {
   const a = listItems(), f = V.f, active = f.seen || f.genre || f.tag || f.plat || f.year || f.age;
-  let h = active ? '<div class="activef"><span>Filter actief</span><button data-a="clearfilter">Wissen</button></div>' : '';
+  let h = active ? '<div class="activef"><span>Filter actief · <b>' + plural(a.length, 'titel', 'titels') + '</b></span><button data-a="clearfilter">Wissen</button></div>' : '';
+  const sub = document.querySelector('.bar .tt small'), tot = count(V.id);
+  if (sub) sub.textContent = (active || V.q.trim() || f.type) && a.length !== tot ? a.length + ' van ' + plural(tot, 'titel', 'titels') : plural(tot, 'titel', 'titels');
   if (!a.length) {
     const none = count(V.id) === 0;
     h += '<div class="notice"><b>' + (none ? 'Deze lijst is nog leeg' : 'Niets gevonden') + '</b><span>' + (none ? 'Tik op de plusknop om een titel te zoeken en toe te voegen.' : 'Pas je zoekopdracht of filter aan.') + '</span></div>';
