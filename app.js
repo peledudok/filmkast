@@ -81,6 +81,7 @@ const inList = (e, id) => e.list === id || seasonNums(e, id).length > 0;
 const count = id => S.entries.filter(e => inList(e, id)).length;
 
 /* ---------- TMDb ---------- */
+const BUILD = '19 oktober 2026, 15:15';
 const CACHE = {};
 const cache = it => { CACHE[it.type + '-' + it.tmdbId] = it; return it; };
 async function api(path, params) {
@@ -1095,7 +1096,7 @@ function sortFields() {
 }
 function vAbout() {
   V = { kind: 'about' };
-  app.innerHTML = bar({ title: 'Over Filmkast' }) + '<section class="panel2"><h2>Filmkast 1.0</h2>' +
+  app.innerHTML = bar({ title: 'Over Filmkast' }) + '<section class="panel2"><h2>Filmkast 1.0</h2><p class="small" style="margin:0">Versie van ' + BUILD + '</p>' +
     '<p style="margin:0">Je eigen film- en seriecollectie. Alles wat je invult blijft op dit apparaat. Alleen zoekopdrachten en lijsten gaan naar TMDb.</p>' +
     '<p style="margin:0" class="small">Deze app gebruikt de TMDb API, maar is niet goedgekeurd of gecertificeerd door TMDb. Filmgegevens en posters komen van TMDb.</p></section>';
 }
