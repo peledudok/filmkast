@@ -412,12 +412,14 @@ const seasonTotal = e => seasonsOf(e, e.d).length;
 function isSeen(e) {
   if (e.type !== 'tv') return !!e.seen;
   const t = seasonTotal(e), n = (e.sn || []).length;
-  return t ? n >= t : !!e.seen || n > 0;
+  if (e.seen && !n) return true;
+  return t ? n >= t : n > 0;
 }
 const isPart = e => e.type === 'tv' && (e.sn || []).length > 0 && !isSeen(e);
 function seenLabel(e) {
   if (e.type !== 'tv') return e.seen ? 'Gezien: ' + fmtDate(e.seen) : '';
   const t = seasonTotal(e), n = (e.sn || []).length;
+  if (e.seen && !n) return 'Gezien (seizoenen onbekend)';
   if (isSeen(e)) return t > 1 ? 'Alle seizoenen gezien' : 'Gezien';
   return n ? 'Gezien: ' + n + (t ? ' van ' + t : '') + ' ' + (t === 1 || (!t && n === 1) ? 'seizoen' : 'seizoenen') : '';
 }
@@ -528,7 +530,6 @@ async function enrich(my) {
 }
 function fillDetail() {
   const e = V.entryId ? S.entries.find(x => x.id === V.entryId) : null;
-  if (e && e.type === 'tv' && e.seen && !(e.sn || []).length && seasonTotal(e)) { e.sn = seasonsOf(e, e.d).map(q => q.n); e.seen = ''; e.u = Date.now(); commit(); }
   if (V.entryId && !e) { location.replace('#/l/' + S.lists[0].id); return; }
   const c = V.tmdbId ? (CACHE[V.type + '-' + V.tmdbId] || {}) : {};
   const g = f => (e && e[f] && (!Array.isArray(e[f]) || e[f].length)) ? e[f] : (c[f] || (f === 'genres' ? [] : ''));
@@ -1260,7 +1261,7 @@ const A = {
   tomove: d => { const e = S.entries.find(x => x.id === V.entryId); if (e && listById(d.l)) { e.list = d.l; if (d.l === 'watch' && e.ns) { e.ns = false; e.why = ''; } e.u = Date.now(); commit(); toast('Verplaatst naar ' + listById(d.l).name); } closeSheet(); fillDetail(); },
   allseasons: () => {
     const e = S.entries.find(x => x.id === V.entryId); if (!e) return;
-    e.sn = seasonsOf(e, e.d || (CACHE[V.type + '-' + V.tmdbId] || {}).d).map(q => q.n).sort((a, b) => a - b); e.sst = {}; e.ns = false; e.u = Date.now();
+    e.sn = seasonsOf(e, e.d || (CACHE[V.type + '-' + V.tmdbId] || {}).d).map(q => q.n).sort((a, b) => a - b); e.sst = {}; e.ns = false; e.seen = ''; e.u = Date.now();
     if (e.list === 'watch' && listById('tv')) { e.list = 'tv'; toast('Verplaatst naar ' + listById('tv').name); }
     commit(); fillDetail();
   },
@@ -1456,7 +1457,7 @@ const IN = {
     } else { e.seen = ''; e.u = Date.now(); commit(); fillDetail(); }
   },
   eadded: el => { const e = S.entries.find(x => x.id === V.entryId); if (e && el.value) { e.added = new Date(el.value + 'T12:00:00').getTime(); e.u = Date.now(); commit(); } },
-  eseason: el => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; const w = new Set(e.sn || []); const n = +el.dataset.n; if (el.checked) { w.add(n); e.ns = false; if (e.sst) delete e.sst[n]; } else w.delete(n); e.sn = [...w].sort((a, b) => a - b); e.u = Date.now();
+  eseason: el => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; const w = new Set(e.sn || []); const n = +el.dataset.n; if (el.checked) { w.add(n); e.ns = false; if (e.sst) delete e.sst[n]; } else w.delete(n); e.sn = [...w].sort((a, b) => a - b); e.seen = ''; e.u = Date.now();
     if (el.checked && e.list === 'watch' && listById('tv')) { e.list = 'tv'; toast('Verplaatst naar ' + listById('tv').name); }
     commit(); fillDetail(); },
   esdt: el => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; e.sdt = e.sdt || {}; if (el.value) e.sdt[el.dataset.n] = el.value; else delete e.sdt[el.dataset.n]; e.u = Date.now(); commit(); },
