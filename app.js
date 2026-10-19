@@ -252,10 +252,11 @@ const cmp = {
   rating: (a, b) => (a.rating || 0) - (b.rating || 0),
   seen: (a, b) => (a.seen || '').localeCompare(b.seen || '')
 };
+const fold = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 function listItems() {
   const f = V.f, q = V.q.trim().toLowerCase();
   let a = S.entries.filter(e => inList(e, V.id));
-  if (q) a = a.filter(e => (e.title + ' ' + (e.genres || []).join(' ') + ' ' + (e.tags || []).join(' ')).toLowerCase().includes(q));
+  if (q) { const fq = fold(q); a = a.filter(e => fold([e.title, e.ot, (e.al || []).join(' '), e.d && e.d.orig, e.d && (e.d.alt || []).join(' '), (e.genres || []).join(' '), (e.tags || []).join(' ')].filter(Boolean).join(' ')).includes(fq)); }
   if (f.type) a = a.filter(e => e.type === f.type);
   if (f.year) a = a.filter(e => e.added && new Date(e.added).getFullYear() === +f.year);
   if (f.age) { const lim = new Date(); lim.setMonth(lim.getMonth() - +f.age); a = a.filter(e => e.added && e.added < lim.getTime()); }
@@ -371,6 +372,25 @@ function fillAdd() {
   $('#items').innerHTML = h;
 }
 let addT;
+let verT;
+function verSearch(q) {
+  clearTimeout(verT);
+  const my = V, box = () => $('#ver-res');
+  if (!box()) return;
+  if (q.length < 2) { box().innerHTML = '<p class="small">Typ minstens twee letters.</p>'; return; }
+  box().innerHTML = '<div class="spin">Zoeken…</div>';
+  verT = setTimeout(async () => {
+    const e = S.entries.find(x => x.id === my.entryId); if (!e) return;
+    try {
+      await ensureGenres();
+      const d = await api('/search/' + e.type, { query: q, include_adult: 'false' });
+      if (V !== my || !box()) return;
+      const items = (d.results || []).slice(0, 12).map(r => cache(norm(r, e.type)));
+      box().innerHTML = items.length ? items.map(it => '<div class="row"><div class="pl">' + posterHtml(it) + '</div><div class="rb"><b>' + esc(it.title) + '</b>' + (it.year ? ' <i>(' + esc(it.year) + ')</i>' : '') +
+        '<div class="rg">' + esc(it.genres.join(' · ')) + '</div><button class="btn sm pri" data-a="verpick" data-k="' + it.type + '-' + it.tmdbId + '">Kiezen</button></div></div>').join('') : '<p class="small">Niets gevonden.</p>';
+    } catch (err) { if (box()) box().innerHTML = '<p class="small">' + esc(errMsg(err)) + '</p>'; }
+  }, 350);
+}
 function addSearch() {
   clearTimeout(addT);
   const my = V, q = V.q.trim();
@@ -491,19 +511,25 @@ function titleFix(e, d) {
 let TC = null;
 async function fixTitles() {
   if (TC) return;
-  let done = {}; try { done = JSON.parse(localStorage.getItem('filmkast.tc') || '{}'); } catch (x) {}
+  let done = {}; try { done = JSON.parse(localStorage.getItem('filmkast.tc2') || '{}'); } catch (x) {}
   const todo = S.entries.filter(e => e.tmdbId && (e.type === 'movie' || e.type === 'tv') && !done[e.type + e.tmdbId]);
-  TC = { n: 0, of: todo.length, changed: 0, fail: 0 };
+  TC = { n: 0, of: todo.length, changed: 0, filled: 0, fail: 0 };
   const show = txt => { const el = $('#tc-st'); if (el) el.textContent = txt; };
   const seen = {}; let i = 0;
-  const save2 = () => { try { localStorage.setItem('filmkast.tc', JSON.stringify(done)); } catch (x) {} };
+  const save2 = () => { try { localStorage.setItem('filmkast.tc2', JSON.stringify(done)); } catch (x) {} };
   const worker = async () => {
     while (i < todo.length) {
       const e = todo[i++], k = e.type + e.tmdbId;
       try {
-        if (!seen[k]) seen[k] = apiRetry('/' + e.type + '/' + e.tmdbId, { append_to_response: 'translations' }).catch(x => (String(x.message) === 'HTTP_404' ? null : Promise.reject(x)));
+        if (!seen[k]) seen[k] = apiRetry('/' + e.type + '/' + e.tmdbId, { append_to_response: 'translations,alternative_titles' }).catch(x => (String(x.message) === 'HTTP_404' ? null : Promise.reject(x)));
         const d = await seen[k];
-        if (d && titleFix(e, d)) { e.u = Date.now(); TC.changed++; }
+        if (d) {
+          const c = compact(d, e.type), ot = c.orig || '', al = (c.alt || []).slice(0, 6);
+          let ch = false;
+          if (titleFix(e, d)) { TC.changed++; ch = true; }
+          if ((e.ot || '') !== ot || JSON.stringify(e.al || []) !== JSON.stringify(al)) { e.ot = ot; e.al = al; ch = true; TC.filled++; }
+          if (ch) e.u = Date.now(); TC.any = true;
+        }
         done[k] = 1;
       } catch (x) { TC.fail++; if (String(x.message) === 'GEEN_SLEUTEL' || String(x.message) === 'SLEUTEL_ONGELDIG') { i = todo.length; TC.key = true; } }
       TC.n++;
@@ -513,10 +539,10 @@ async function fixTitles() {
   show('Bezig… 0 van ' + TC.of);
   await Promise.all([worker(), worker(), worker(), worker()]);
   save2();
-  if (TC.changed) commit(); else save();
+  if (TC.changed || TC.filled) commit(); else save();
   const r = TC;
   TC = null;
-  show(r.key ? 'Geen geldige TMDb-sleutel.' : 'Klaar: ' + r.changed + ' titels aangepast' + (r.fail ? ', ' + r.fail + ' niet gelukt (probeer later opnieuw)' : '') + '.');
+  show(r.key ? 'Geen geldige TMDb-sleutel.' : 'Klaar: ' + r.changed + ' titels aangepast, ' + r.filled + ' originele titels toegevoegd' + (r.fail ? ', ' + r.fail + ' niet gelukt (probeer later opnieuw)' : '') + '.');
   if (r.changed) toast(r.changed + ' titels aangepast');
 }
 async function enrich(my) {
@@ -535,7 +561,7 @@ async function enrich(my) {
       if (!(e.genres || []).length && it.genres.length) e.genres = it.genres;
       if (!e.poster && it.poster) e.poster = it.poster;
       if (!e.rating && it.rating) e.rating = it.rating;
-      e.d = it.d;
+      e.d = it.d; e.ot = it.d.orig || e.ot || ''; e.al = (it.d.alt || []).slice(0, 6);
       if (titleFix(e, d)) { e.u = Date.now(); commit(); } else save();
     }
   } catch (err) { if (V !== my) return; my.err = errMsg(err); }
@@ -1004,6 +1030,7 @@ function cleanEntry(x) {
     sdt: x.sdt && typeof x.sdt === 'object' ? Object.keys(x.sdt).reduce((o, n) => { if (+n > 0 && /^\d{4}-\d{2}-\d{2}$/.test(x.sdt[n])) o[n] = x.sdt[n]; return o; }, {}) : {},
     sst: x.sst && typeof x.sst === 'object' ? Object.keys(x.sst).reduce((o, n) => { if (+n > 0 && ['watch', 'wish'].includes(x.sst[n])) o[n] = x.sst[n]; return o; }, {}) : {},
     tags: Array.isArray(x.tags) ? x.tags.map(String).filter(Boolean) : [], where: Array.isArray(x.where) ? x.where.map(String).filter(k => PLAT.some(q => q[0] === k)) : [], ns: !!x.ns, why: String(x.why || ''),
+    ot: String(x.ot || ''), al: Array.isArray(x.al) ? x.al.map(String).slice(0, 6) : [],
     added: +x.added || Date.now(), u: +x.u || 0
   };
 }
@@ -1057,7 +1084,7 @@ function vSettings() {
     '<label class="fld">Regio voor bioscooplijsten<select class="in" data-in="region">' + [['NL', 'Nederland'], ['BE', 'België'], ['DE', 'Duitsland'], ['GB', 'Verenigd Koninkrijk'], ['US', 'Verenigde Staten']].map(o => '<option value="' + o[0] + '"' + (s.region === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label></section>' +
     syncSection() +
     '<section class="panel2"><h2>Sorteren</h2>' + sortFields() + '</section>' +
-    '<section class="panel2"><h2>Titels</h2><p class="small" style="margin:0">Staat er een titel in een andere taal (bijvoorbeeld Hongaars), dan zoekt de app de Engelse titel erbij. Titels die je zelf hebt aangepast blijven staan.</p><button class="btn" data-a="fixtitles">Titels controleren</button><p class="small" id="tc-st" style="margin:0"></p></section>' +
+    '<section class="panel2"><h2>Titels</h2><p class="small" style="margin:0">Zoekt de Engelse titel erbij als er een titel in een andere taal staat (bijvoorbeeld Hongaars) en haalt de originele titels op, zodat je ook op de titel tussen haakjes kunt zoeken. Titels die je zelf hebt aangepast blijven staan.</p><button class="btn" data-a="fixtitles">Titels controleren en originele titels ophalen</button><p class="small" id="tc-st" style="margin:0"></p></section>' +
     '<section class="panel2"><h2>Uiterlijk</h2><div class="fld">Accentkleur</div><div class="sw">' + ACCENTS.map(a => '<button style="background:' + a + '" class="' + (s.accent === a ? 'on' : '') + '" data-a="accent" data-c="' + a + '" aria-label="Kleur ' + a + '"></button>').join('') + '</div></section>' +
     '<section class="panel2"><h2>Info</h2><a class="link" href="#/over">Over Filmkast</a></section>';
 }
@@ -1365,7 +1392,28 @@ const A = {
       '<label class="fld">Beschrijving<textarea id="ed-over" class="in" style="min-height:140px">' + esc(e.overview) + '</textarea></label>' +
       '<div class="pedit">' + (e.poster ? '<div class="pos"><img alt="" src="' + esc(posterSrc(e.poster, 'w185')) + '"></div>' : '<div class="pos">geen<br>afbeelding</div>') +
       '<button class="btn" data-a="editposter">Poster wijzigen</button></div>' +
+      (e.tmdbId ? '<button class="btn wide" data-a="editversion">Andere versie kiezen</button>' : '') +
       '<div class="cols"><button class="btn ghost" data-a="closesheet">Annuleren</button><button class="btn pri" data-a="saveedit">Opslaan</button></div>');
+  },
+  editversion: () => {
+    const e = S.entries.find(x => x.id === V.entryId); if (!e) return;
+    openSheet('<h3>Andere versie kiezen</h3><p class="small" style="margin-top:0">Zoek de juiste ' + (e.type === 'tv' ? 'serie' : 'film') + '. Je kijkdatum, tags, opmerking en lijst blijven staan. Titel, poster en beschrijving worden vervangen.</p>' +
+      '<input id="ver-q" class="in" type="search" data-in="verq" value="' + esc(e.title) + '" autocomplete="off"><div id="ver-res" class="rows"></div>' +
+      '<div class="cols"><button class="btn ghost" data-a="editdata">Terug</button></div>');
+    verSearch(e.title);
+  },
+  verpick: d => {
+    const e = S.entries.find(x => x.id === V.entryId), it = CACHE[d.k]; if (!e || !it) return;
+    if (it.tmdbId === e.tmdbId && it.type === e.type) { toast('Dit is al de gekozen versie'); return; }
+    if (S.entries.some(x => x.id !== e.id && x.list === e.list && x.type === it.type && x.tmdbId === it.tmdbId)) { toast('Deze versie staat al in dezelfde lijst'); return; }
+    openSheet('<h3>Vervangen door deze versie?</h3><p><b>' + esc(it.title) + '</b>' + (it.year ? ' (' + esc(it.year) + ')' : '') + '</p><p class="small">Je kijkdatum, tags, opmerking en lijst blijven staan.' + (e.type === 'tv' ? ' Controleer daarna je seizoenen.' : '') + '</p>' +
+      '<div class="cols"><button class="btn ghost" data-a="editversion">Terug</button><button class="btn pri" data-a="verset" data-k="' + d.k + '">Ja, vervangen</button></div>');
+  },
+  verset: d => {
+    const e = S.entries.find(x => x.id === V.entryId), it = CACHE[d.k]; if (!e || !it) return;
+    Object.assign(e, { tmdbId: it.tmdbId, type: it.type, title: it.title, year: it.year, poster: it.poster, overview: it.overview, genres: it.genres, rating: it.rating, ot: '', al: [], u: Date.now() });
+    delete e.d; delete e.seasons;
+    commit(); closeSheet(); route(); toast('Versie aangepast');
   },
   editposter: async () => {
     const e = S.entries.find(x => x.id === V.entryId); if (!e) return;
@@ -1474,6 +1522,7 @@ const IN = {
   fage: el => { V.f.age = el.value; fillItems(); },
   fplat: el => { V.f.plat = el.value; fillItems(); },
   elist: el => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.list = el.value; e.u = Date.now(); commit(); toast('Verplaatst naar ' + listById(el.value).name); } },
+  verq: el => verSearch(el.value.trim()),
   adst: el => { const a = $('#ad-dw'), b = $('#ad-yw'); if (a) a.hidden = el.value !== 'seen'; if (b) b.hidden = el.value !== 'ns'; },
   eseen: el => {
     const e = S.entries.find(x => x.id === V.entryId); if (!e) return;
