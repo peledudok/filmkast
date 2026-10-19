@@ -232,8 +232,7 @@ function route() {
 }
 
 /* eigen lijst */
-const ART = /^(?:(?:the|a|an|de|het|een|le|la|les|el|los|las|il|lo|un|une|der|das|ein|eine)\s+|l['\u2019]|['\u2019]t\s+)/i;
-const sortKey = t => { const s = String(t || '').trim(); const m = s.replace(ART, '').replace(/^[^\p{L}\p{N}]+/u, ''); return m || s; };
+const sortKey = t => String(t || '').trim().replace(/^[^\p{L}\p{N}]+/u, '') || String(t || '');
 const cmp = {
   title: (a, b) => sortKey(a.title).localeCompare(sortKey(b.title), 'nl', { sensitivity: 'base', numeric: true }),
   year: (a, b) => (+a.year || 0) - (+b.year || 0),
