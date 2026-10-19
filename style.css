@@ -244,3 +244,7 @@ details.how ol{margin:8px 0 0;padding-left:22px;display:grid;gap:6px}
 #alpha b.off{opacity:.3}
 #alpha.drag{background:color-mix(in srgb,var(--bg) 92%,transparent)}
 .rows>*,.tiles>*{scroll-margin-top:120px}
+
+#alpha{width:30px;height:calc(100vh - 230px);max-height:none;padding:6px 0}
+#alpha b{font-size:15px;font-weight:700}
+.seen.no{color:var(--mut);font-weight:500}

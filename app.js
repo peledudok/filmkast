@@ -81,7 +81,7 @@ const inList = (e, id) => e.list === id || seasonNums(e, id).length > 0;
 const count = id => S.entries.filter(e => inList(e, id)).length;
 
 /* ---------- TMDb ---------- */
-const BUILD = '19 oktober 2026, 17:30';
+const BUILD = '19 oktober 2026, 20:00';
 const CACHE = {};
 const cache = it => { CACHE[it.type + '-' + it.tmdbId] = it; return it; };
 async function api(path, params) {
@@ -177,7 +177,7 @@ const posterHtml = (it, sz) => it.poster
 function entryRow(e) {
   return '<a class="row" href="#/e/' + e.id + '">' + posterHtml(e) + '<div class="rb"><div class="rt"><b>' + esc(e.title) + '</b>' +
     (e.year ? ' <i>(' + esc(e.year) + ')</i>' : '') + '</div><div class="rg">' + esc((e.genres || []).join(' · ')) + '</div>' +
-    (seenLabel(e) ? '<div class="seen">' + esc(seenLabel(e)) + '</div>' : '') +
+    (seenLabel(e) ? '<div class="seen">' + esc(seenLabel(e)) + '</div>' : (V && V.kind === 'list' && (V.id === 'movies' || V.id === 'tv') && e.list === V.id ? '<div class="seen no">Niet gezien</div>' : '')) +
     (V && V.kind === 'list' && e.list !== V.id && seasonNums(e, V.id).length ? '<div class="since">' + (seasonNums(e, V.id).length > 1 ? 'Seizoenen ' : 'Seizoen ') + seasonNums(e, V.id).join(', ') + '</div>' : '') +
     (e.list === 'wish' && e.added ? '<div class="since">Op lijst sinds ' + fmtDate(isoOf(e.added)) + ' · ' + ago(e.added) + '</div>' : '') + '</div></a>';
 }
@@ -188,10 +188,11 @@ function tmdbRow(it, listId) {
   const owned = S.entries.filter(e => e.type === it.type && e.tmdbId === it.tmdbId);
   const inList = listId ? owned.some(e => e.list === listId) : false;
   const href = '#/d/' + it.type + '/' + it.tmdbId;
-  const label = inList ? 'In lijst' : (!listId && owned.length ? 'Nog een lijst' : 'Toevoegen');
+  const here = inList ? owned.find(e => e.list === listId) : null;
+  const label = inList ? 'In ' + (listById(listId) ? listById(listId).name : 'lijst') + ' ›' : (!listId && owned.length ? 'Nog een lijst' : 'Toevoegen');
   return '<div class="row"><a class="pl" href="' + href + '">' + posterHtml(it) + '</a><div class="rb"><a class="rt" href="' + href + '"><b>' + esc(it.title) + '</b>' +
     (it.year ? ' <i>(' + esc(it.year) + ')</i>' : '') + '</a><div class="rg">' + (it.type === 'tv' ? 'Serie · ' : '') + esc(it.genres.join(' · ')) + '</div>' +
-    '<button class="btn sm ' + (inList ? 'ghost' : 'pri') + '" data-a="addres" data-k="' + it.type + '-' + it.tmdbId + '"' + (inList ? ' disabled' : '') + '>' + label + '</button></div></div>';
+    (inList ? '<a class="btn sm ghost" href="#/e/' + here.id + '">' + esc(label) + '</a>' : '<button class="btn sm pri" data-a="addres" data-k="' + it.type + '-' + it.tmdbId + '">' + label + '</button>') + '</div></div>';
 }
 let toastT;
 function toast(msg) {
