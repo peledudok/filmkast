@@ -13,7 +13,7 @@ const PUB = [
   { id: 'series', name: 'Populaire series', path: '/tv/popular', type: 'tv' },
   { id: 'beste-series', name: 'Best beoordeelde series', path: '/tv/top_rated', type: 'tv' }
 ];
-const PLAT = [['bios', 'Bios'], ['plex', 'Plex'], ['netflix', 'Netflix'], ['sky', 'SkyShowtime'], ['hbo', 'HBO Max'], ['prime', 'Prime Video'], ['npo', 'NPO Start'], ['vl', 'Videoland'], ['disney', 'Disney+'], ['apple', 'Apple TV'], ['pathe', 'Pathé'], ['oscar', 'Oscar'], ['globe', 'Golden Globe'], ['grammy', 'Grammy']];
+const PLAT = [['bios', 'Bios'], ['plex', 'Plex'], ['netflix', 'Netflix'], ['sky', 'SkyShowtime'], ['hbo', 'HBO Max'], ['prime', 'Prime Video'], ['npo', 'NPO Start'], ['vl', 'Videoland'], ['ziggo', 'Ziggo TV'], ['disney', 'Disney+'], ['apple', 'Apple TV'], ['pathe', 'Pathé'], ['oscar', 'Oscar'], ['globe', 'Golden Globe'], ['grammy', 'Grammy']];
 const ACCENTS = ['#e0a458', '#7fc8bd', '#8fb4ff', '#d98b9b', '#a9d36b'];
 
 const $ = s => document.querySelector(s);
@@ -81,7 +81,7 @@ const inList = (e, id) => e.list === id || seasonNums(e, id).length > 0;
 const count = id => S.entries.filter(e => inList(e, id)).length;
 
 /* ---------- TMDb ---------- */
-const BUILD = '20 oktober 2026, 01:30';
+const BUILD = '20 oktober 2026, 01:45';
 const CACHE = {};
 const cache = it => { CACHE[it.type + '-' + it.tmdbId] = it; return it; };
 async function api(path, params) {
@@ -1284,7 +1284,7 @@ function doImport(mode) {
 
 /* instellingen */
 /* Streamingdiensten (TMDb / JustWatch) */
-const SVC = [['netflix', /netflix/i], ['prime', /prime video|amazon prime/i], ['disney', /disney/i], ['apple', /apple tv/i], ['hbo', /\bmax\b|hbo/i], ['sky', /skyshowtime/i], ['vl', /videoland/i], ['npo', /npo/i], ['pathe', /path[eé]/i]];
+const SVC = [['netflix', /netflix/i], ['prime', /prime video|amazon prime/i], ['disney', /disney/i], ['apple', /apple tv/i], ['hbo', /\bmax\b|hbo/i], ['sky', /skyshowtime/i], ['vl', /videoland/i], ['npo', /npo/i], ['pathe', /path[eé]/i], ['ziggo', /ziggo/i]];
 const WPK = 'filmkast.wp';
 let WP = (() => { try { return JSON.parse(localStorage.getItem(WPK)) || {}; } catch (e) { return {}; } })();
 function wpSave() { try { localStorage.setItem(WPK, JSON.stringify(WP)); } catch (e) { } }
