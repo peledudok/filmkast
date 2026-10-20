@@ -81,7 +81,7 @@ const inList = (e, id) => e.list === id || seasonNums(e, id).length > 0;
 const count = id => S.entries.filter(e => inList(e, id)).length;
 
 /* ---------- TMDb ---------- */
-const BUILD = '20 oktober 2026, 23:15';
+const BUILD = '21 oktober 2026, 00:10';
 const CACHE = {};
 const cache = it => { CACHE[it.type + '-' + it.tmdbId] = it; return it; };
 async function api(path, params) {
@@ -179,6 +179,7 @@ function entryRow(e) {
     (e.year ? ' <i>(' + esc(e.year) + ')</i>' : '') + '</div><div class="rg">' + esc((e.genres || []).join(' · ')) + '</div>' +
     (seenLabel(e) ? '<div class="seen">' + esc(seenLabel(e)) + '</div>' : (V && V.kind === 'list' && (V.id === 'movies' || V.id === 'tv') && e.list === V.id ? '<div class="seen no">Niet gezien</div>' : '')) +
     (V && V.kind === 'list' && e.list !== V.id && seasonNums(e, V.id).length ? '<div class="since">' + (seasonNums(e, V.id).length > 1 ? 'Seizoenen ' : 'Seizoen ') + seasonNums(e, V.id).join(', ') + (swNames(e, seasonNums(e, V.id)) ? ' · ' + esc(swNames(e, seasonNums(e, V.id))) : '') + '</div>' : '') +
+    ((V && V.kind === 'list' && V.id === 'watch') ? epLines(e) : '') +
     ((V && V.kind === 'list' && (V.id === 'watch' || V.id === 'wish') && inList(e, V.id)) ? wpChip(e) : '') +
     (e.list === 'wish' && e.added ? '<div class="since">Op lijst sinds ' + fmtDate(isoOf(e.added)) + ' · ' + ago(e.added) + '</div>' : '') + '</div></a>';
 }
@@ -671,7 +672,7 @@ function fillDetail() {
         '<div class="sb"><b>' + esc(q.name || 'Seizoen ' + q.n) + '</b><span>' + [q.eps ? plural(q.eps, 'aflevering', 'afleveringen') : '', q.date ? q.date.slice(0, 4) : '', e ? swNames(e, [q.n]) : ''].filter(Boolean).join(' · ') + '</span></div></a>' +
         (ed ? '<button class="ib" data-a="renameseason" data-n="' + q.n + '" aria-label="Naam wijzigen">' + ico('edit') + '</button><button class="ib" data-a="delseason" data-n="' + q.n + '" aria-label="Seizoen verwijderen">' + ico('trash') + '</button>'
           : (e ? '<div class="sctl"><button class="btn sm" data-a="seasonwhere" data-n="' + q.n + '">' + (swNames(e, [q.n]) ? 'Waar: ' + esc(swNames(e, [q.n])) : 'Waar kijken?') + '</button><label class="chk sgz"><input type="checkbox" data-in="eseason" data-n="' + q.n + '"' + ((e.sn || []).includes(q.n) ? ' checked' : '') + '> Gezien</label>' +
-            ((e.sn || []).includes(q.n) ? '<input type="date" class="in sdt" data-in="esdt" data-n="' + q.n + '" value="' + esc((e.sdt || {})[q.n] || '') + '" max="' + today() + '" aria-label="Datum gezien (mag leeg)">' : '<select class="in sst" data-in="esst" data-n="' + q.n + '" aria-label="Seizoen op lijst"><option value="">Geen lijst</option>' +
+            ((e.sn || []).includes(q.n) ? '<input type="date" class="in sdt" data-in="esdt" data-n="' + q.n + '" value="' + esc((e.sdt || {})[q.n] || '') + '" max="' + today() + '" aria-label="Datum gezien (mag leeg)">' : '<label class="small sepl">Afl. gezien <input type="number" inputmode="numeric" min="0"' + (q.eps ? ' max="' + q.eps + '"' : '') + ' class="in sep" data-in="eseps" data-n="' + q.n + '" value="' + ((e.se || {})[q.n] || '') + '">' + (q.eps ? ' van ' + q.eps : '') + '</label>' + '<select class="in sst" data-in="esst" data-n="' + q.n + '" aria-label="Seizoen op lijst"><option value="">Geen lijst</option>' +
               ['watch', 'wish'].filter(id => listById(id)).map(id => '<option value="' + id + '"' + ((e.sst || {})[q.n] === id ? ' selected' : '') + '>' + esc(listById(id).name) + '</option>').join('') + '</select>') + '</div>' : '')) + '</div>').join('') : '<p class="small" style="margin:8px 0">Nog geen seizoenen. Voeg er een toe met de knop hierboven.</p>') +
         (e && !ed && list.length > 1 && (e.sn || []).length < list.length ? '<button class="btn wide" data-a="allseasons">Alle seizoenen gezien</button>' : '') + '</div>';
       h += '</section>';
@@ -1240,6 +1241,7 @@ function cleanEntry(x) {
     sn: Array.isArray(x.sn) ? x.sn.map(Number).filter(n => n > 0) : [],
     sdt: x.sdt && typeof x.sdt === 'object' ? Object.keys(x.sdt).reduce((o, n) => { if (+n > 0 && /^\d{4}-\d{2}-\d{2}$/.test(x.sdt[n])) o[n] = x.sdt[n]; return o; }, {}) : {},
     sst: x.sst && typeof x.sst === 'object' ? Object.keys(x.sst).reduce((o, n) => { if (+n > 0 && ['watch', 'wish'].includes(x.sst[n])) o[n] = x.sst[n]; return o; }, {}) : {},
+    se: x.se && typeof x.se === 'object' ? Object.keys(x.se).reduce((o, n) => { if (+n > 0 && +x.se[n] > 0) o[n] = Math.floor(+x.se[n]); return o; }, {}) : {},
     sw: x.sw && typeof x.sw === 'object' ? Object.keys(x.sw).reduce((o, n) => { const a = Array.isArray(x.sw[n]) ? x.sw[n].map(String).filter(k => PLAT.some(q => q[0] === k)) : []; if (+n > 0 && a.length) o[n] = a; return o; }, {}) : {},
     tags: Array.isArray(x.tags) ? x.tags.map(String).filter(Boolean) : [], where: Array.isArray(x.where) ? x.where.map(String).filter(k => PLAT.some(q => q[0] === k)) : [], ns: !!x.ns, why: String(x.why || ''),
     ot: String(x.ot || ''), al: Array.isArray(x.al) ? x.al.map(String).slice(0, 6) : [],
@@ -1299,6 +1301,15 @@ async function wpFetch(type, id) {
   const str = [...new Set([...nm(x.flatrate), ...nm(x.free), ...nm(x.ads)])];
   const k = [...new Set(str.map(n => (SVC.find(q => q[1].test(n)) || [])[0]).filter(Boolean))];
   return { t: Date.now(), s: str, k, r: nm(x.rent), b: nm(x.buy) };
+}
+function epLines(e) {
+  if (e.type !== 'tv' || !e.se) return '';
+  const ss = seasonsOf(e, e.d);
+  const one = ss.length <= 1 && Object.keys(e.se).length === 1;
+  return Object.keys(e.se).map(Number).filter(n => e.se[n] > 0 && !(e.sn || []).includes(n)).sort((a, b) => a - b).map(n => {
+    const t = (ss.find(q => q.n === n) || {}).eps;
+    return '<div class="since">' + (one ? '' : 'Seizoen ' + n + ': ') + e.se[n] + (t ? ' van ' + t : '') + ' ' + (e.se[n] === 1 && !t ? 'aflevering' : 'afleveringen') + ' gezien</div>';
+  }).join('');
 }
 const swNames = (e, ns) => [...new Set([].concat(...ns.map(n => (e.sw || {})[n] || [])))].map(platName).join(', ');
 function manualPlat(e) {
@@ -1796,6 +1807,10 @@ const A = {
 function pubSearchReset() { V.items = []; V.page = 0; V.total = 1; V.err = ''; renderPub(); loadMore(); }
 let pubT;
 const IN = {
+  eseps: el => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; const n = +el.dataset.n, v = Math.floor(+el.value) || 0, t = (seasonsOf(e, e.d || (CACHE[V.type + '-' + V.tmdbId] || {}).d).find(q => q.n === n) || {}).eps;
+    e.se = e.se || {}; if (v > 0) e.se[n] = v; else delete e.se[n]; e.u = Date.now();
+    if (t && v >= t) { e.sn = [...new Set([...(e.sn || []), n])].sort((a, b) => a - b); if (e.sst) delete e.sst[n]; delete e.se[n]; e.seen = ''; e.ns = false; commit(); toast('Seizoen ' + n + ' staat nu op gezien'); fillDetail(); return; }
+    commit(); },
   eswp: el => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; const n = el.dataset.n, k = el.dataset.k; e.sw = e.sw || {}; const a = new Set(e.sw[n] || []); if (el.checked) a.add(k); else a.delete(k); if (a.size) e.sw[n] = [...a]; else delete e.sw[n];
     if (el.checked && !(e.where || []).includes(k)) e.where = (e.where || []).concat(k); e.u = Date.now(); commit(); },
   myplat: el => { const a = new Set(myPlat()); if (el.checked) a.add(el.dataset.k); else a.delete(el.dataset.k); S.settings.myPlat = [...a]; save(); },
@@ -1832,7 +1847,7 @@ const IN = {
     } else { e.seen = ''; e.u = Date.now(); commit(); fillDetail(); }
   },
   eadded: el => { const e = S.entries.find(x => x.id === V.entryId); if (e && el.value) { e.added = new Date(el.value + 'T12:00:00').getTime(); e.u = Date.now(); commit(); } },
-  eseason: el => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; const w = new Set(e.sn || []); const n = +el.dataset.n; if (el.checked) { w.add(n); e.ns = false; if (e.sst) delete e.sst[n]; } else w.delete(n); e.sn = [...w].sort((a, b) => a - b); e.seen = ''; e.u = Date.now();
+  eseason: el => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; const w = new Set(e.sn || []); const n = +el.dataset.n; if (el.checked) { w.add(n); e.ns = false; if (e.sst) delete e.sst[n]; if (e.se) delete e.se[n]; } else w.delete(n); e.sn = [...w].sort((a, b) => a - b); e.seen = ''; e.u = Date.now();
     if (el.checked && e.list === 'watch' && listById('tv')) { e.list = 'tv'; toast('Verplaatst naar ' + listById('tv').name); }
     commit(); fillDetail(); },
   esdt: el => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; e.sdt = e.sdt || {}; if (el.value) e.sdt[el.dataset.n] = el.value; else delete e.sdt[el.dataset.n]; e.u = Date.now(); commit(); },
