@@ -81,7 +81,7 @@ const inList = (e, id) => e.list === id || seasonNums(e, id).length > 0;
 const count = id => S.entries.filter(e => inList(e, id)).length;
 
 /* ---------- TMDb ---------- */
-const BUILD = '20 oktober 2026, 01:45';
+const BUILD = '20 oktober 2026, 23:15';
 const CACHE = {};
 const cache = it => { CACHE[it.type + '-' + it.tmdbId] = it; return it; };
 async function api(path, params) {
@@ -178,8 +178,8 @@ function entryRow(e) {
   return '<a class="row" href="#/e/' + e.id + '">' + posterHtml(e) + '<div class="rb"><div class="rt"><b>' + esc(e.title) + '</b>' +
     (e.year ? ' <i>(' + esc(e.year) + ')</i>' : '') + '</div><div class="rg">' + esc((e.genres || []).join(' · ')) + '</div>' +
     (seenLabel(e) ? '<div class="seen">' + esc(seenLabel(e)) + '</div>' : (V && V.kind === 'list' && (V.id === 'movies' || V.id === 'tv') && e.list === V.id ? '<div class="seen no">Niet gezien</div>' : '')) +
-    (V && V.kind === 'list' && e.list !== V.id && seasonNums(e, V.id).length ? '<div class="since">' + (seasonNums(e, V.id).length > 1 ? 'Seizoenen ' : 'Seizoen ') + seasonNums(e, V.id).join(', ') + '</div>' : '') +
-    ((e.list === 'wish' || e.list === 'watch') ? wpChip(e) : '') +
+    (V && V.kind === 'list' && e.list !== V.id && seasonNums(e, V.id).length ? '<div class="since">' + (seasonNums(e, V.id).length > 1 ? 'Seizoenen ' : 'Seizoen ') + seasonNums(e, V.id).join(', ') + (swNames(e, seasonNums(e, V.id)) ? ' · ' + esc(swNames(e, seasonNums(e, V.id))) : '') + '</div>' : '') +
+    ((V && V.kind === 'list' && (V.id === 'watch' || V.id === 'wish') && inList(e, V.id)) ? wpChip(e) : '') +
     (e.list === 'wish' && e.added ? '<div class="since">Op lijst sinds ' + fmtDate(isoOf(e.added)) + ' · ' + ago(e.added) + '</div>' : '') + '</div></a>';
 }
 function entryTile(e) {
@@ -269,7 +269,7 @@ function listItems() {
   if (f.seen === 'unseen') a = a.filter(e => !isSeen(e) && !isPart(e));
   if (f.genre) a = a.filter(e => (e.genres || []).includes(f.genre));
   if (f.tag) a = a.filter(e => (e.tags || []).includes(f.tag));
-  if (f.plat) a = a.filter(e => (e.where || []).includes(f.plat));
+  if (f.plat) a = a.filter(e => (e.where || []).includes(f.plat) || Object.values(e.sw || {}).some(l => l.includes(f.plat)));
   if (f.seen === 'ns') a = a.filter(e => e.ns);
   const k = S.settings.sortKey, d = S.settings.sortDir === 'desc' ? -1 : 1;
   a.sort((x, y) => d * (cmp[k] || cmp.title)(x, y) || cmp.title(x, y));
@@ -483,7 +483,7 @@ function vDetail(type, id) {
   if (!(c && c.d && 'ss' in c.d)) enrich(V);
 }
 const seasonsOf = (e, d) => (e && Array.isArray(e.seasons)) ? e.seasons : ((d && d.ss) || []);
-const seasonTotal = e => seasonsOf(e, e.d).length;
+const seasonTotal = e => { const n = seasonsOf(e, e.d).length; return n || Math.max(0, ...(e.sn || []), ...Object.keys(e.sst || {}).map(Number)); };
 function isSeen(e) {
   if (e.type !== 'tv') return !!e.seen;
   const t = seasonTotal(e), n = (e.sn || []).length;
@@ -668,9 +668,9 @@ function fillDetail() {
         (e ? '<button class="btn sm' + (ed ? ' pri' : '') + '" data-a="editseasons">' + (ed ? 'Klaar' : 'Bewerken') + '</button><button class="btn sm" data-a="addseason">+ Seizoen</button>' : '') + '</div>';
       if (open) h += '<div class="seasons">' + (list.length ? list.map(q => '<div class="srow"><a class="sa" href="#/s/' + V.tmdbId + '/' + q.n + '">' +
         '<div class="spos">' + (q.poster ? '<img loading="lazy" alt="" src="' + IMG + 'w185' + esc(q.poster) + '">' : '') + '</div>' +
-        '<div class="sb"><b>' + esc(q.name || 'Seizoen ' + q.n) + '</b><span>' + [q.eps ? plural(q.eps, 'aflevering', 'afleveringen') : '', q.date ? q.date.slice(0, 4) : ''].filter(Boolean).join(' · ') + '</span></div></a>' +
+        '<div class="sb"><b>' + esc(q.name || 'Seizoen ' + q.n) + '</b><span>' + [q.eps ? plural(q.eps, 'aflevering', 'afleveringen') : '', q.date ? q.date.slice(0, 4) : '', e ? swNames(e, [q.n]) : ''].filter(Boolean).join(' · ') + '</span></div></a>' +
         (ed ? '<button class="ib" data-a="renameseason" data-n="' + q.n + '" aria-label="Naam wijzigen">' + ico('edit') + '</button><button class="ib" data-a="delseason" data-n="' + q.n + '" aria-label="Seizoen verwijderen">' + ico('trash') + '</button>'
-          : (e ? '<div class="sctl"><label class="chk sgz"><input type="checkbox" data-in="eseason" data-n="' + q.n + '"' + ((e.sn || []).includes(q.n) ? ' checked' : '') + '> Gezien</label>' +
+          : (e ? '<div class="sctl"><button class="btn sm" data-a="seasonwhere" data-n="' + q.n + '">' + (swNames(e, [q.n]) ? 'Waar: ' + esc(swNames(e, [q.n])) : 'Waar kijken?') + '</button><label class="chk sgz"><input type="checkbox" data-in="eseason" data-n="' + q.n + '"' + ((e.sn || []).includes(q.n) ? ' checked' : '') + '> Gezien</label>' +
             ((e.sn || []).includes(q.n) ? '<input type="date" class="in sdt" data-in="esdt" data-n="' + q.n + '" value="' + esc((e.sdt || {})[q.n] || '') + '" max="' + today() + '" aria-label="Datum gezien (mag leeg)">' : '<select class="in sst" data-in="esst" data-n="' + q.n + '" aria-label="Seizoen op lijst"><option value="">Geen lijst</option>' +
               ['watch', 'wish'].filter(id => listById(id)).map(id => '<option value="' + id + '"' + ((e.sst || {})[q.n] === id ? ' selected' : '') + '>' + esc(listById(id).name) + '</option>').join('') + '</select>') + '</div>' : '')) + '</div>').join('') : '<p class="small" style="margin:8px 0">Nog geen seizoenen. Voeg er een toe met de knop hierboven.</p>') +
         (e && !ed && list.length > 1 && (e.sn || []).length < list.length ? '<button class="btn wide" data-a="allseasons">Alle seizoenen gezien</button>' : '') + '</div>';
@@ -1240,6 +1240,7 @@ function cleanEntry(x) {
     sn: Array.isArray(x.sn) ? x.sn.map(Number).filter(n => n > 0) : [],
     sdt: x.sdt && typeof x.sdt === 'object' ? Object.keys(x.sdt).reduce((o, n) => { if (+n > 0 && /^\d{4}-\d{2}-\d{2}$/.test(x.sdt[n])) o[n] = x.sdt[n]; return o; }, {}) : {},
     sst: x.sst && typeof x.sst === 'object' ? Object.keys(x.sst).reduce((o, n) => { if (+n > 0 && ['watch', 'wish'].includes(x.sst[n])) o[n] = x.sst[n]; return o; }, {}) : {},
+    sw: x.sw && typeof x.sw === 'object' ? Object.keys(x.sw).reduce((o, n) => { const a = Array.isArray(x.sw[n]) ? x.sw[n].map(String).filter(k => PLAT.some(q => q[0] === k)) : []; if (+n > 0 && a.length) o[n] = a; return o; }, {}) : {},
     tags: Array.isArray(x.tags) ? x.tags.map(String).filter(Boolean) : [], where: Array.isArray(x.where) ? x.where.map(String).filter(k => PLAT.some(q => q[0] === k)) : [], ns: !!x.ns, why: String(x.why || ''),
     ot: String(x.ot || ''), al: Array.isArray(x.al) ? x.al.map(String).slice(0, 6) : [],
     added: +x.added || Date.now(), u: +x.u || 0
@@ -1299,7 +1300,16 @@ async function wpFetch(type, id) {
   const k = [...new Set(str.map(n => (SVC.find(q => q[1].test(n)) || [])[0]).filter(Boolean))];
   return { t: Date.now(), s: str, k, r: nm(x.rent), b: nm(x.buy) };
 }
-function wpMine(e) { const w = WP[wpKey(e)]; return [...new Set([...(w ? w.k : []), ...(e.where || []).filter(k => SVC.some(q => q[0] === k))])].filter(k => myPlat().includes(k)); }
+const swNames = (e, ns) => [...new Set([].concat(...ns.map(n => (e.sw || {})[n] || [])))].map(platName).join(', ');
+function manualPlat(e) {
+  if (e.type === 'tv' && e.sw && Object.keys(e.sw).length) {
+    const ns = [...new Set([...seasonNums(e, 'watch'), ...seasonNums(e, 'wish')])];
+    const a = [].concat(...ns.map(n => e.sw[n] || []));
+    if (a.length) return a;
+  }
+  return e.where || [];
+}
+function wpMine(e) { const w = WP[wpKey(e)]; return [...new Set([...(w ? w.k : []), ...manualPlat(e).filter(k => SVC.some(q => q[0] === k))])].filter(k => myPlat().includes(k)); }
 let wpBusy = false, wpLast = 0;
 async function wpScan(force) {
   if (wpBusy || !hasKey() || !myPlat().length) return;
@@ -1393,7 +1403,7 @@ function sheetFilter() {
   const f = V.f;
   const tags = [...new Set(S.entries.filter(e => inList(e, V.id)).flatMap(e => e.tags || []))].sort((a, b) => a.localeCompare(b, 'nl'));
   const here = S.entries.filter(e => inList(e, V.id));
-  const plats = PLAT.filter(q => here.some(e => (e.where || []).includes(q[0])) || f.plat === q[0]);
+  const plats = PLAT.filter(q => here.some(e => (e.where || []).includes(q[0]) || Object.values(e.sw || {}).some(l => l.includes(q[0]))) || f.plat === q[0]);
   const op = (v, label) => '<option value="' + v + '"' + (f.seen === v ? ' selected' : '') + '>' + label + '</option>';
   const seenSel = (V.id === 'wish' || V.id === 'watch') ? '' :
     '<label class="fld">Gezien<select class="in" data-in="fseen"><option value="">Alles</option>' + op('seen', 'Gezien') + op('unseen', 'Nog niet gezien') +
@@ -1543,6 +1553,9 @@ async function syncNow(auto) {
 
 /* ---------- gebeurtenissen ---------- */
 const A = {
+  seasonwhere: d => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; const n = +d.n, cur = (e.sw || {})[n] || [];
+    openSheet('<h3>Seizoen ' + n + ': waar te kijken</h3><p class="small" style="margin:0 0 8px">Bijvoorbeeld Plex als je dit seizoen hebt gedownload, of NPO Start als je het daar hebt gezien.</p><div class="chkrow">' + PLAT.filter(q => !['oscar', 'globe', 'grammy'].includes(q[0])).map(q => '<label class="chk"><input type="checkbox" data-in="eswp" data-n="' + n + '" data-k="' + q[0] + '"' + (cur.includes(q[0]) ? ' checked' : '') + '> ' + q[1] + '</label>').join('') + '</div><div class="cols"><button class="btn pri" data-a="swdone">Klaar</button></div>'); },
+  swdone: () => { closeSheet(); fillDetail(); },
   wpscan: () => { const st = $('#wp-st'); if (!hasKey()) { if (st) st.textContent = 'Vul eerst je TMDb-sleutel in.'; return; } if (!myPlat().length) { if (st) st.textContent = 'Vink eerst minstens één dienst aan.'; return; } if (st) st.textContent = 'Bezig met controleren…'; wpScan(true); },
   drawer: openDrawer, closedrawer: closeDrawer, closesheet: closeSheet,
   back: () => { if (history.length > 1) history.back(); else location.hash = '#/l/' + S.lists[0].id; },
@@ -1783,6 +1796,8 @@ const A = {
 function pubSearchReset() { V.items = []; V.page = 0; V.total = 1; V.err = ''; renderPub(); loadMore(); }
 let pubT;
 const IN = {
+  eswp: el => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; const n = el.dataset.n, k = el.dataset.k; e.sw = e.sw || {}; const a = new Set(e.sw[n] || []); if (el.checked) a.add(k); else a.delete(k); if (a.size) e.sw[n] = [...a]; else delete e.sw[n];
+    if (el.checked && !(e.where || []).includes(k)) e.where = (e.where || []).concat(k); e.u = Date.now(); commit(); },
   myplat: el => { const a = new Set(myPlat()); if (el.checked) a.add(el.dataset.k); else a.delete(el.dataset.k); S.settings.myPlat = [...a]; save(); },
   q: el => { V.q = el.value; fillItems(); },
   pq: el => {
