@@ -81,7 +81,7 @@ const inList = (e, id) => e.list === id || seasonNums(e, id).length > 0;
 const count = id => S.entries.filter(e => inList(e, id)).length;
 
 /* ---------- TMDb ---------- */
-const BUILD = '21 oktober 2026, 01:10';
+const BUILD = '21 oktober 2026, 13:00';
 const CACHE = {};
 const cache = it => { CACHE[it.type + '-' + it.tmdbId] = it; return it; };
 async function api(path, params) {
@@ -256,6 +256,7 @@ function route() {
 }
 
 /* eigen lijst */
+const sortOf = id => { const o = (S.settings.sorts || {})[id]; return o ? { k: o.k, d: o.d } : { k: S.settings.sortKey, d: S.settings.sortDir }; };
 const sortKey = t => String(t || '').trim().replace(/^[^\p{L}\p{N}]+/u, '') || String(t || '');
 const cmp = {
   title: (a, b) => sortKey(a.title).localeCompare(sortKey(b.title), 'nl', { sensitivity: 'base', numeric: true }),
@@ -279,7 +280,7 @@ function listItems() {
   if (f.tag) a = a.filter(e => (e.tags || []).includes(f.tag));
   if (f.plat) a = a.filter(e => (e.where || []).includes(f.plat) || Object.values(e.sw || {}).some(l => l.includes(f.plat)));
   if (f.seen === 'ns') a = a.filter(e => e.ns);
-  const k = S.settings.sortKey, d = S.settings.sortDir === 'desc' ? -1 : 1;
+  const so = sortOf(V.id), k = so.k, d = so.d === 'desc' ? -1 : 1;
   a.sort((x, y) => d * (cmp[k] || cmp.title)(x, y) || cmp.title(x, y));
   return a;
 }
@@ -321,17 +322,20 @@ function fillItems() {
 const alphaOf = t => { const c = sortKey(t).charAt(0).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase(); return /[A-Z]/.test(c) ? c : '#'; };
 function alphaBuild(a) {
   let el = $('#alpha');
-  const on = S.settings.sortKey === 'title' && S.settings.sortDir !== 'desc' && a.length > 12 && V.kind === 'list';
+  const on = V.kind === 'list' && sortOf(V.id).k === 'title' && a.length > 12, desc = sortOf(V.id).d === 'desc';
   if (!on) { if (el) el.remove(); return; }
   if (!el) { el = document.createElement('div'); el.id = 'alpha'; document.body.appendChild(el); alphaBind(el); }
   const kids = $('#items').querySelector('.rows,.tiles').children, first = {};
   a.forEach((e, i) => { const l = alphaOf(e.title); if (!(l in first) && kids[i]) first[l] = kids[i]; });
   V.alpha = first;
   const L = ['#'].concat('ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''));
+  if (desc) L.reverse();
+  V.alphaDesc = desc;
   el.innerHTML = L.map(l => '<b data-l="' + l + '" class="' + (first[l] ? '' : 'off') + '">' + l + '</b>').join('');
 }
 function alphaGo(l) {
   const L = ['#'].concat('ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')), f = V.alpha || {};
+  if (V.alphaDesc) L.reverse();
   for (let i = L.indexOf(l); i < L.length; i++) if (f[L[i]]) { f[L[i]].scrollIntoView({ block: 'start' }); return; }
   const k = Object.keys(f); if (k.length) f[k[k.length - 1]].scrollIntoView({ block: 'start' });
 }
@@ -1387,6 +1391,10 @@ function wpDoMove(e) {
   else if (e.sst) { const w = WP[wpKey(e)] || {}; seasonNums(e, 'wish').forEach(n => { if (!w.sd || (w.sd[n] && w.sd[n] <= today())) e.sst[n] = 'watch'; }); }
   e.u = Date.now(); commit();
 }
+function askToList(e, dest) {
+  const l = listById(dest); if (!l) return;
+  openSheet('<h3>Verplaatsen naar ' + esc(l.name) + '?</h3><p>Je hebt ' + (e.type === 'tv' ? 'een seizoen' : 'deze film') + ' gezien. Wil je de titel van de ' + esc((listById(e.list) || {}).name || 'lijst') + ' naar ' + esc(l.name) + ' verplaatsen?</p><div class="cols"><button class="btn ghost" data-a="closesheet">Nee</button><button class="btn pri" data-a="tomove" data-l="' + dest + '">Ja, verplaatsen</button></div>');
+}
 function wpAsk() {
   const sh = $('#sheet'); if (!sh || sh.classList.contains('open')) return;
   const e = wpCands()[0]; if (!e) return;
@@ -1448,8 +1456,8 @@ function vAbout() {
 
 /* bladen */
 function sheetSort() {
-  const s = S.settings;
-  openSheet('<h3>Sorteren</h3><div class="stack">' + SORTS.map(o => '<button class="opt' + (s.sortKey === o[0] ? ' on' : '') + '" data-a="setsort" data-k="' + o[0] + '">' + o[1] + '</button>').join('') + '</div>' +
+  const so = sortOf(V.id), s = { sortKey: so.k, sortDir: so.d };
+  openSheet('<h3>Sorteren: ' + esc((listById(V.id) || {}).name || '') + '</h3><div class="stack">' + SORTS.map(o => '<button class="opt' + (s.sortKey === o[0] ? ' on' : '') + '" data-a="setsort" data-k="' + o[0] + '">' + o[1] + '</button>').join('') + '</div>' +
     '<div class="cols"><button class="opt' + (s.sortDir === 'asc' ? ' on' : '') + '" data-a="setdir" data-d="asc">Oplopend</button><button class="opt' + (s.sortDir === 'desc' ? ' on' : '') + '" data-a="setdir" data-d="desc">Aflopend</button></div>');
 }
 function sheetFilter() {
@@ -1627,8 +1635,8 @@ const A = {
   sheetfilter: sheetFilter, sheetsort: sheetSort, sheetmore: sheetMore,
   ftype: d => { V.f.type = d.t; S.settings.typeSel = Object.assign({}, S.settings.typeSel, { [V.id]: d.t }); save(); renderList(); },
   clearfilter: () => { V.f = { seen: '', genre: '', tag: '', plat: '', year: '', age: '', type: V.f.type || '' }; closeSheet(); fillItems(); },
-  setsort: d => { S.settings.sortKey = d.k; save(); sheetSort(); if (V.kind === 'list') fillItems(); },
-  setdir: d => { S.settings.sortDir = d.d; save(); sheetSort(); if (V.kind === 'list') fillItems(); },
+  setsort: d => { S.settings.sorts = S.settings.sorts || {}; S.settings.sorts[V.id] = { k: d.k, d: sortOf(V.id).d }; save(); sheetSort(); if (V.kind === 'list') fillItems(); },
+  setdir: d => { S.settings.sorts = S.settings.sorts || {}; S.settings.sorts[V.id] = { k: sortOf(V.id).k, d: d.d }; save(); sheetSort(); if (V.kind === 'list') fillItems(); },
   add: () => { location.hash = '#/toevoegen/' + V.id; },
   addres: d => {
     if (V.kind === 'add') sheetAdd(d.k); else sheetPick(d.k);
@@ -1666,6 +1674,7 @@ const A = {
     const dest = e.type === 'tv' ? 'tv' : 'movies';
     if (e.list === 'watch' && listById(dest)) { e.list = dest; toast('Verplaatst naar ' + listById(dest).name); }
     commit(); closeSheet(); fillDetail();
+    if (e.list === 'wish') askToList(e, dest);
   },
   fixtitles: () => { fixTitles(); },
   seasonswatch: () => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.sst = Object.assign({}, e.sst); Object.keys(e.sst).forEach(n => { if (e.sst[n] === 'wish') e.sst[n] = 'watch'; }); e.u = Date.now(); commit(); toast('Verplaatst naar ' + (listById('watch') || {}).name); } closeSheet(); fillDetail(); },
@@ -1901,7 +1910,8 @@ const IN = {
   eadded: el => { const e = S.entries.find(x => x.id === V.entryId); if (e && el.value) { e.added = new Date(el.value + 'T12:00:00').getTime(); e.u = Date.now(); commit(); } },
   eseason: el => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; const w = new Set(e.sn || []); const n = +el.dataset.n; if (el.checked) { w.add(n); e.ns = false; if (e.sst) delete e.sst[n]; if (e.se) delete e.se[n]; } else w.delete(n); e.sn = [...w].sort((a, b) => a - b); e.seen = ''; e.u = Date.now();
     if (el.checked && e.list === 'watch' && listById('tv')) { e.list = 'tv'; toast('Verplaatst naar ' + listById('tv').name); }
-    commit(); fillDetail(); },
+    commit(); fillDetail();
+    if (el.checked && e.list === 'wish' && listById('tv')) askToList(e, 'tv'); },
   esdt: el => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; e.sdt = e.sdt || {}; if (el.value) e.sdt[el.dataset.n] = el.value; else delete e.sdt[el.dataset.n]; e.u = Date.now(); commit(); },
   esst: el => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; e.sst = e.sst || {}; if (el.value) e.sst[el.dataset.n] = el.value; else delete e.sst[el.dataset.n]; e.u = Date.now(); commit(); toast(el.value ? 'Seizoen ' + el.dataset.n + ' staat op ' + listById(el.value).name : 'Seizoen ' + el.dataset.n + ' staat op geen lijst'); },
   ens: el => { const e = S.entries.find(x => x.id === V.entryId); if (e) { e.ns = el.checked; if (el.checked) e.seen = ''; e.u = Date.now(); commit(); fillDetail(); } },
