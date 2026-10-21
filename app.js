@@ -81,7 +81,7 @@ const inList = (e, id) => e.list === id || seasonNums(e, id).length > 0;
 const count = id => S.entries.filter(e => inList(e, id)).length;
 
 /* ---------- TMDb ---------- */
-const BUILD = '21 oktober 2026, 22:55';
+const BUILD = '21 oktober 2026, 23:30';
 const CACHE = {};
 const cache = it => { CACHE[it.type + '-' + it.tmdbId] = it; return it; };
 async function api(path, params) {
@@ -1326,10 +1326,9 @@ function epLines(e) {
 }
 const swNames = (e, ns) => [...new Set([].concat(...ns.map(n => (e.sw || {})[n] || [])))].map(platName).join(', ');
 function manualPlat(e) {
-  if (e.type === 'tv' && e.sw && Object.keys(e.sw).length) {
+  if (e.type === 'tv' && e.list !== 'watch' && e.list !== 'wish') {
     const ns = [...new Set([...seasonNums(e, 'watch'), ...seasonNums(e, 'wish')])];
-    const a = [].concat(...ns.map(n => e.sw[n] || []));
-    if (a.length) return a;
+    return [].concat(...ns.map(n => (e.sw || {})[n] || []));
   }
   return e.where || [];
 }
