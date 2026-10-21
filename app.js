@@ -81,7 +81,7 @@ const inList = (e, id) => e.list === id || seasonNums(e, id).length > 0;
 const count = id => S.entries.filter(e => inList(e, id)).length;
 
 /* ---------- TMDb ---------- */
-const BUILD = '21 oktober 2026, 00:10';
+const BUILD = '21 oktober 2026, 01:10';
 const CACHE = {};
 const cache = it => { CACHE[it.type + '-' + it.tmdbId] = it; return it; };
 async function api(path, params) {
@@ -174,13 +174,20 @@ const posterSrc = (p, sz) => /^https?:\/\//.test(p) ? p : IMG + (sz || 'w185') +
 const posterHtml = (it, sz) => it.poster
   ? '<div class="pos"><img loading="lazy" alt="" src="' + esc(posterSrc(it.poster, sz)) + '"></div>'
   : '<div class="pos">geen<br>afbeelding</div>';
+function rowExtra(e) {
+  const L = V && V.kind === 'list', sl = L && e.list !== V.id && seasonNums(e, V.id).length;
+  const chip = L && (V.id === 'watch' || V.id === 'wish') && inList(e, V.id) ? wpText(e) : '';
+  let h = '';
+  if (sl) h += '<div class="since">' + (seasonNums(e, V.id).length > 1 ? 'Seizoenen ' : 'Seizoen ') + seasonNums(e, V.id).join(', ') + (swNames(e, seasonNums(e, V.id)) ? ' · ' + esc(swNames(e, seasonNums(e, V.id))) : '') + (chip ? ' · <b class="svcn">' + esc(chip) + '</b>' : '') + '</div>';
+  if (L && V.id === 'watch') h += epLines(e);
+  if (!sl && chip) h += '<div class="svc">' + esc(chip) + '</div>';
+  return h;
+}
 function entryRow(e) {
   return '<a class="row" href="#/e/' + e.id + '">' + posterHtml(e) + '<div class="rb"><div class="rt"><b>' + esc(e.title) + '</b>' +
     (e.year ? ' <i>(' + esc(e.year) + ')</i>' : '') + '</div><div class="rg">' + esc((e.genres || []).join(' · ')) + '</div>' +
     (seenLabel(e) ? '<div class="seen">' + esc(seenLabel(e)) + '</div>' : (V && V.kind === 'list' && (V.id === 'movies' || V.id === 'tv') && e.list === V.id ? '<div class="seen no">Niet gezien</div>' : '')) +
-    (V && V.kind === 'list' && e.list !== V.id && seasonNums(e, V.id).length ? '<div class="since">' + (seasonNums(e, V.id).length > 1 ? 'Seizoenen ' : 'Seizoen ') + seasonNums(e, V.id).join(', ') + (swNames(e, seasonNums(e, V.id)) ? ' · ' + esc(swNames(e, seasonNums(e, V.id))) : '') + '</div>' : '') +
-    ((V && V.kind === 'list' && V.id === 'watch') ? epLines(e) : '') +
-    ((V && V.kind === 'list' && (V.id === 'watch' || V.id === 'wish') && inList(e, V.id)) ? wpChip(e) : '') +
+    rowExtra(e) +
     (e.list === 'wish' && e.added ? '<div class="since">Op lijst sinds ' + fmtDate(isoOf(e.added)) + ' · ' + ago(e.added) + '</div>' : '') + '</div></a>';
 }
 function entryTile(e) {
@@ -1295,12 +1302,14 @@ const wpKey = e => e.type + '-' + e.tmdbId;
 const myPlat = () => S.settings.myPlat || [];
 const platName = k => (PLAT.find(q => q[0] === k) || [])[1] || k;
 async function wpFetch(type, id) {
-  const r = await api('/' + type + '/' + id + '/watch/providers');
+  const [r, sh] = await Promise.all([api('/' + type + '/' + id + '/watch/providers'), type === 'tv' ? api('/tv/' + id).catch(() => null) : Promise.resolve(null)]);
   const x = (r.results || {})[S.settings.region || 'NL'] || {};
   const nm = a => (a || []).map(q => q.provider_name);
   const str = [...new Set([...nm(x.flatrate), ...nm(x.free), ...nm(x.ads)])];
   const k = [...new Set(str.map(n => (SVC.find(q => q[1].test(n)) || [])[0]).filter(Boolean))];
-  return { t: Date.now(), s: str, k, r: nm(x.rent), b: nm(x.buy) };
+  const out = { t: Date.now(), s: str, k, r: nm(x.rent), b: nm(x.buy) };
+  if (sh && Array.isArray(sh.seasons)) { out.sd = {}; sh.seasons.forEach(q => { if (q.season_number > 0 && q.air_date) out.sd[q.season_number] = q.air_date; }); }
+  return out;
 }
 function epLines(e) {
   if (e.type !== 'tv' || !e.se) return '';
@@ -1320,7 +1329,15 @@ function manualPlat(e) {
   }
   return e.where || [];
 }
-function wpMine(e) { const w = WP[wpKey(e)]; return [...new Set([...(w ? w.k : []), ...manualPlat(e).filter(k => SVC.some(q => q[0] === k))])].filter(k => myPlat().includes(k)); }
+function wpRelevant(e) {
+  if (e.type !== 'tv') return true;
+  const w = WP[wpKey(e)]; if (!w || !w.sd) return true;
+  const ns = (e.list === 'watch' || e.list === 'wish') ? Object.keys(w.sd).map(Number).filter(n => !(e.sn || []).includes(n)) : [...new Set([...seasonNums(e, 'watch'), ...seasonNums(e, 'wish')])];
+  if (!ns.length) return true;
+  const t = today();
+  return ns.some(n => w.sd[n] && w.sd[n] <= t);
+}
+function wpMine(e) { const w = WP[wpKey(e)]; return [...new Set([...(w && wpRelevant(e) ? w.k : []), ...manualPlat(e).filter(k => SVC.some(q => q[0] === k))])].filter(k => myPlat().includes(k)); }
 let wpBusy = false, wpLast = 0;
 async function wpScan(force) {
   if (wpBusy || !hasKey() || !myPlat().length) return;
@@ -1346,14 +1363,40 @@ async function wpScan(force) {
   await Promise.all([worker(), worker(), worker(), worker()]);
   wpSave(); wpBusy = false;
   if (V && V.kind === 'list' && (V.id === 'watch' || V.id === 'wish')) fillItems();
-  if (fresh.length) toast(fresh.length === 1 ? 'Nu beschikbaar: ' + fresh[0] : fresh.length + ' titels nu beschikbaar op jouw diensten');
+  wpAsk();
+  if (fresh.length && !$('#sheet').classList.contains('open')) toast(fresh.length === 1 ? 'Nu beschikbaar: ' + fresh[0] : fresh.length + ' titels nu beschikbaar op jouw diensten');
   const st = $('#wp-st'); if (st) st.textContent = 'Klaar: ' + done + ' titels gecontroleerd' + (fresh.length ? ', ' + fresh.length + ' nieuw beschikbaar' : '') + '.';
 }
-function wpChip(e) {
+function wpText(e) {
   const m = wpMine(e); if (!m.length) return '';
   const w = WP[wpKey(e)] || {}, nw = w.nt && Date.now() - w.nt < 6048e5;
-  return '<div class="svc">' + (nw ? 'Nieuw: ' : '') + 'Nu op ' + esc(m.map(platName).join(', ')) + '</div>';
+  return (nw ? 'Nieuw: ' : '') + 'Nu op ' + m.map(platName).join(', ');
 }
+function wpChip(e) { const t = wpText(e); return t ? '<div class="svc">' + esc(t) + '</div>' : ''; }
+/* verplaatsen van Verlanglijst naar Kijklijst */
+const wpSkip = new Set();
+const wpOnWish = e => e.tmdbId && (e.list === 'wish' || seasonNums(e, 'wish').length > 0);
+function wpAvail(e) { const w = WP[wpKey(e)]; return !!(w && w.k.some(k => myPlat().includes(k)) && wpRelevant(e)); }
+function wpCands() {
+  return S.entries.filter(e => wpOnWish(e) && !wpSkip.has(e.id)).filter(e => {
+    const w = WP[wpKey(e)]; return w && w.nt && !w.dis && Date.now() - w.nt < 30 * 864e5 && (w.nk || []).some(k => myPlat().includes(k)) && wpAvail(e);
+  });
+}
+function wpDoMove(e) {
+  if (e.list === 'wish') { e.list = 'watch'; if (e.ns) { e.ns = false; e.why = ''; } }
+  else if (e.sst) { const w = WP[wpKey(e)] || {}; seasonNums(e, 'wish').forEach(n => { if (!w.sd || (w.sd[n] && w.sd[n] <= today())) e.sst[n] = 'watch'; }); }
+  e.u = Date.now(); commit();
+}
+function wpAsk() {
+  const sh = $('#sheet'); if (!sh || sh.classList.contains('open')) return;
+  const e = wpCands()[0]; if (!e) return;
+  const w = WP[wpKey(e)], names = (w.nk || []).filter(k => myPlat().includes(k)).map(platName).join(', ');
+  const ns = e.type === 'tv' && e.list !== 'wish' ? seasonNums(e, 'wish') : [];
+  openSheet('<h3>Nu beschikbaar</h3><p style="margin:0 0 6px"><b>' + esc(e.title) + '</b>' + (ns.length ? ' (' + (ns.length > 1 ? 'seizoenen ' : 'seizoen ') + ns.join(', ') + ')' : '') + ' is nu te zien op ' + esc(names) + '.</p><p class="small" style="margin:0 0 10px">Verplaatsen van de Verlanglijst naar de Kijklijst?</p>' +
+    '<div class="stack"><button class="btn pri wide" data-a="wpmove" data-id="' + e.id + '">Verplaatsen</button><button class="btn wide" data-a="wpskip" data-id="' + e.id + '">Niet nu</button><button class="btn wide" data-a="wpnever" data-id="' + e.id + '">Nooit voor deze titel</button></div>');
+}
+const wpNext = () => setTimeout(() => { if (V && V.kind === 'list') fillItems(); wpAsk(); }, 250);
+let wpSel = new Set();
 function wpHtml(e0) {
   const w = WP[wpKey(e0)]; if (!w) return '<div class="spin">Laden…</div>';
   const mine = myPlat(), has = e0.id ? S.entries.find(x => x.id === e0.id) : null;
@@ -1432,7 +1475,7 @@ function sheetFilter() {
     '<div class="cols"><button class="btn ghost" data-a="clearfilter">Wissen</button><button class="btn pri" data-a="closesheet">Klaar</button></div>');
 }
 function sheetMore() {
-  openSheet('<h3>' + esc(listById(V.id).name) + '</h3><div class="stack"><button class="opt" data-a="exportlist">Deze lijst als CSV opslaan</button><a class="opt" href="#/beheer" style="text-decoration:none">Lijsten beheren</a><button class="opt" data-a="clearlist" style="color:var(--bad)">Lijst leegmaken</button></div>');
+  openSheet('<h3>' + esc(listById(V.id).name) + '</h3><div class="stack">' + (V.id === 'wish' && myPlat().length ? '<button class="opt" data-a="wpnow">Wat is nu al beschikbaar?</button>' : '') + '<button class="opt" data-a="exportlist">Deze lijst als CSV opslaan</button><a class="opt" href="#/beheer" style="text-decoration:none">Lijsten beheren</a><button class="opt" data-a="clearlist" style="color:var(--bad)">Lijst leegmaken</button></div>');
 }
 function sheetPick(k) {
   const it = CACHE[k]; if (!it) return;
@@ -1564,6 +1607,14 @@ async function syncNow(auto) {
 
 /* ---------- gebeurtenissen ---------- */
 const A = {
+  wpmove: d => { const e = S.entries.find(x => x.id === d.id); if (e) { wpDoMove(e); toast(e.title + ' staat nu op de Kijklijst'); } closeSheet(); wpNext(); },
+  wpskip: d => { wpSkip.add(d.id); closeSheet(); wpNext(); },
+  wpnever: d => { const e = S.entries.find(x => x.id === d.id); if (e && WP[wpKey(e)]) { WP[wpKey(e)].dis = true; wpSave(); } wpSkip.add(d.id); closeSheet(); wpNext(); },
+  wpnow: () => {
+    const a = S.entries.filter(e => wpOnWish(e) && wpAvail(e)); wpSel = new Set();
+    openSheet('<h3>Nu al beschikbaar</h3>' + (a.length ? '<p class="small" style="margin:0 0 8px">Titels van je Verlanglijst die nu op een van jouw diensten staan. Vink aan wat naar de Kijklijst mag.</p><div class="stack" style="max-height:50vh;overflow:auto">' + a.map(e => '<label class="chk"><input type="checkbox" data-in="wpsel" data-id="' + e.id + '"> ' + esc(e.title) + ' <small>' + esc(wpText(e).replace(/^Nieuw: /, '')) + '</small></label>').join('') + '</div><div class="cols" style="margin-top:10px"><button class="btn pri" data-a="wpmovesel">Verplaats geselecteerde</button></div>' : '<p class="small">Er staat nu niets op je Verlanglijst dat op een van jouw diensten te zien is.</p>'));
+  },
+  wpmovesel: () => { let n = 0; wpSel.forEach(id => { const e = S.entries.find(x => x.id === id); if (e) { wpDoMove(e); n++; } }); closeSheet(); if (V && V.kind === 'list') renderList(); toast(n ? n + ' verplaatst naar de Kijklijst' : 'Niets verplaatst'); },
   seasonwhere: d => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; const n = +d.n, cur = (e.sw || {})[n] || [];
     openSheet('<h3>Seizoen ' + n + ': waar te kijken</h3><p class="small" style="margin:0 0 8px">Bijvoorbeeld Plex als je dit seizoen hebt gedownload, of NPO Start als je het daar hebt gezien.</p><div class="chkrow">' + PLAT.filter(q => !['oscar', 'globe', 'grammy'].includes(q[0])).map(q => '<label class="chk"><input type="checkbox" data-in="eswp" data-n="' + n + '" data-k="' + q[0] + '"' + (cur.includes(q[0]) ? ' checked' : '') + '> ' + q[1] + '</label>').join('') + '</div><div class="cols"><button class="btn pri" data-a="swdone">Klaar</button></div>'); },
   swdone: () => { closeSheet(); fillDetail(); },
@@ -1807,6 +1858,7 @@ const A = {
 function pubSearchReset() { V.items = []; V.page = 0; V.total = 1; V.err = ''; renderPub(); loadMore(); }
 let pubT;
 const IN = {
+  wpsel: el => { if (el.checked) wpSel.add(el.dataset.id); else wpSel.delete(el.dataset.id); },
   eseps: el => { const e = S.entries.find(x => x.id === V.entryId); if (!e) return; const n = +el.dataset.n, v = Math.floor(+el.value) || 0, t = (seasonsOf(e, e.d || (CACHE[V.type + '-' + V.tmdbId] || {}).d).find(q => q.n === n) || {}).eps;
     e.se = e.se || {}; if (v > 0) e.se[n] = v; else delete e.se[n]; e.u = Date.now();
     if (t && v >= t) { e.sn = [...new Set([...(e.sn || []), n])].sort((a, b) => a - b); if (e.sst) delete e.sst[n]; delete e.se[n]; e.seen = ''; e.ns = false; commit(); toast('Seizoen ' + n + ' staat nu op gezien'); fillDetail(); return; }
