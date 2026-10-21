@@ -81,7 +81,7 @@ const inList = (e, id) => e.list === id || seasonNums(e, id).length > 0;
 const count = id => S.entries.filter(e => inList(e, id)).length;
 
 /* ---------- TMDb ---------- */
-const BUILD = '21 oktober 2026, 13:00';
+const BUILD = '21 oktober 2026, 22:55';
 const CACHE = {};
 const cache = it => { CACHE[it.type + '-' + it.tmdbId] = it; return it; };
 async function api(path, params) {
@@ -1335,7 +1335,7 @@ function manualPlat(e) {
 }
 function wpRelevant(e) {
   if (e.type !== 'tv') return true;
-  const w = WP[wpKey(e)]; if (!w || !w.sd) return true;
+  const w = WP[wpKey(e)]; if (!w || !w.sd) return !((e.sn || []).length || Object.keys(e.sst || {}).length);
   const ns = (e.list === 'watch' || e.list === 'wish') ? Object.keys(w.sd).map(Number).filter(n => !(e.sn || []).includes(n)) : [...new Set([...seasonNums(e, 'watch'), ...seasonNums(e, 'wish')])];
   if (!ns.length) return true;
   const t = today();
@@ -1347,7 +1347,7 @@ async function wpScan(force) {
   if (wpBusy || !hasKey() || !myPlat().length) return;
   wpBusy = true; wpLast = Date.now();
   const todo = S.entries.filter(e => e.tmdbId && (e.list === 'watch' || e.list === 'wish' || inList(e, 'watch') || inList(e, 'wish')))
-    .filter(e => force || !WP[wpKey(e)] || Date.now() - WP[wpKey(e)].t > 864e5)
+    .filter(e => force || !WP[wpKey(e)] || (e.type === 'tv' && !WP[wpKey(e)].sd) || Date.now() - WP[wpKey(e)].t > 864e5)
     .sort((a, b) => ((WP[wpKey(a)] || {}).t || 0) - ((WP[wpKey(b)] || {}).t || 0)).slice(0, 400);
   const fresh = []; let i = 0, done = 0;
   const worker = async () => {
@@ -1410,6 +1410,7 @@ function wpHtml(e0) {
   const mine = myPlat(), has = e0.id ? S.entries.find(x => x.id === e0.id) : null;
   const names = w.s.map(n => { const k = (SVC.find(q => q[1].test(n)) || [])[0]; return k && mine.includes(k) ? '<b class="mine">' + esc(n) + ' ✓</b>' : esc(n); });
   let h = '<div class="dv">' + (names.length ? 'Streamen: ' + names.join(', ') : 'Geen streamingdienst gevonden in Nederland.') + '</div>';
+  if (e0.type === 'tv' && names.length) h += '<div class="dv small">Dit geldt voor de serie als geheel, niet per seizoen. Een nieuw seizoen kan er nog niet bij staan.</div>';
   if (w.r.length) h += '<div class="dv small">Huren: ' + w.r.slice(0, 6).map(esc).join(', ') + '</div>';
   if (w.b.length) h += '<div class="dv small">Kopen: ' + w.b.slice(0, 6).map(esc).join(', ') + '</div>';
   if (has && (has.where || []).length) h += '<div class="dv small">Jouw tags: ' + has.where.map(k => esc(platName(k))).join(', ') + '</div>';
