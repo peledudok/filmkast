@@ -256,3 +256,11 @@ details.how ol{margin:8px 0 0;padding-left:22px;display:grid;gap:6px}
 .sep{width:64px;padding:6px 8px;text-align:center}
 
 .svcn{color:var(--acc)}
+
+.gjump{display:flex;flex-wrap:wrap;gap:8px;padding:12px max(14px,env(safe-area-inset-left,0px)) 4px}
+.gjump small{color:var(--mut);margin-left:4px}
+.grp{scroll-margin-top:70px}
+.grph{display:flex;align-items:center;gap:10px;width:100%;padding:16px max(14px,env(safe-area-inset-left,0px)) 8px;background:none;border:0;border-bottom:1px solid var(--line);color:var(--acc);font:700 15px/1.2 var(--head);text-transform:uppercase;letter-spacing:.12em;text-align:left;cursor:pointer}
+.grph small{color:var(--mut);font-weight:400;letter-spacing:0}
+.grph i{margin-left:auto;font-style:normal;color:var(--mut)}
+@media (min-width:700px){.gjump,.grph{max-width:760px;margin-left:auto;margin-right:auto}}

@@ -81,7 +81,7 @@ const inList = (e, id) => e.list === id || seasonNums(e, id).length > 0;
 const count = id => S.entries.filter(e => inList(e, id)).length;
 
 /* ---------- TMDb ---------- */
-const BUILD = '21 oktober 2026, 23:30';
+const BUILD = '28 oktober 2026, 19:50';
 const CACHE = {};
 const cache = it => { CACHE[it.type + '-' + it.tmdbId] = it; return it; };
 async function api(path, params) {
@@ -292,7 +292,8 @@ function vList(id) {
 function renderList() {
   const L = listById(V.id), n = count(V.id);
   app.innerHTML = bar({ menu: true, title: L.name, sub: plural(n, 'titel', 'titels'), acts: [['togglesearch', 'search', 'Zoeken'], ['sheetfilter', 'filter', 'Filteren'], ['sheetsort', 'sort', 'Sorteren'], ['sheetmore', 'more', 'Meer']] }) +
-    '<div class="tabs" role="tablist"><button role="tab" data-a="view" data-v="list" class="' + (S.settings.view === 'list' ? 'on' : '') + '">Lijst</button><button role="tab" data-a="view" data-v="tiles" class="' + (S.settings.view === 'tiles' ? 'on' : '') + '">Tegels</button></div>' +
+    '<div class="tabs" role="tablist"><button role="tab" data-a="view" data-v="list" class="' + (viewOf(V.id) === 'list' ? 'on' : '') + '">Lijst</button><button role="tab" data-a="view" data-v="tiles" class="' + (viewOf(V.id) === 'tiles' ? 'on' : '') + '">Tegels</button>' +
+    (grpOk(V.id) ? '<button role="tab" data-a="view" data-v="groups" class="' + (viewOf(V.id) === 'groups' ? 'on' : '') + '">Per dienst</button>' : '') + '</div>' +
     segHtml() +
     (V.sq ? '<div class="pad" style="padding-top:10px"><input id="q" class="in" type="search" placeholder="Zoek in ' + esc(L.name) + '" value="' + esc(V.q) + '" data-in="q" autocomplete="off"></div>' : '') +
     '<div id="items"></div><button class="fab" data-a="add" aria-label="Titel toevoegen">' + ico('plus') + '</button>';
@@ -306,6 +307,25 @@ function segHtml() {
   const b = (t, label, c) => '<button data-a="ftype" data-t="' + t + '" class="' + ((V.f.type || '') === t ? 'on' : '') + '">' + label + ' <small>' + c + '</small></button>';
   return '<div class="seg">' + b('', 'Alles', all.length) + b('movie', 'Films', n('movie')) + b('tv', 'Series', n('tv')) + '</div>';
 }
+const grpOk = id => id === 'watch' || id === 'wish';
+function viewOf(id) { const v = (S.settings.views || {})[id] || (S.settings.view === 'groups' ? 'list' : S.settings.view) || 'list'; return v === 'groups' && !grpOk(id) ? 'list' : v; }
+const GRP = PLAT.filter(q => !['bios', 'oscar', 'globe', 'grammy'].includes(q[0])).map(q => q[0]);
+function groupKeys(e) {
+  const man = manualPlat(e);
+  if (man.includes('plex')) return ['plex'];
+  const ks = new Set(wpMine(e));
+  man.forEach(k => { if (GRP.includes(k)) ks.add(k); });
+  return GRP.filter(k => ks.has(k));
+}
+function groupsHtml(a) {
+  const G = {}; GRP.concat('none').forEach(k => { G[k] = []; });
+  a.forEach(e => { const ks = groupKeys(e); (ks.length ? ks : ['none']).forEach(k => G[k].push(e)); });
+  const keys = GRP.concat('none').filter(k => G[k].length), nm = k => k === 'none' ? 'Nergens' : platName(k);
+  V.gc = V.gc || new Set();
+  return '<div class="gjump">' + keys.map(k => '<button class="btn sm" data-a="grpjump" data-k="' + k + '">' + esc(nm(k)) + ' <small>' + G[k].length + '</small></button>').join('') + '</div>' +
+    keys.map(k => '<section class="grp" id="g-' + k + '"><button class="grph" data-a="grptoggle" data-k="' + k + '" aria-expanded="' + !V.gc.has(k) + '"><span>' + esc(nm(k)) + '</span><small>' + G[k].length + '</small><i>' + (V.gc.has(k) ? '▾' : '▴') + '</i></button>' +
+      (V.gc.has(k) ? '' : '<div class="rows">' + G[k].map(entryRow).join('') + '</div>') + '</section>').join('');
+}
 function fillItems() {
   const a = listItems(), f = V.f, active = f.seen || f.genre || f.tag || f.plat || f.year || f.age;
   let h = active ? '<div class="activef"><span>Filter actief · <b>' + plural(a.length, 'titel', 'titels') + '</b></span><button data-a="clearfilter">Wissen</button></div>' : '';
@@ -314,7 +334,8 @@ function fillItems() {
   if (!a.length) {
     const none = count(V.id) === 0;
     h += '<div class="notice"><b>' + (none ? 'Deze lijst is nog leeg' : 'Niets gevonden') + '</b><span>' + (none ? 'Tik op de plusknop om een titel te zoeken en toe te voegen.' : 'Pas je zoekopdracht of filter aan.') + '</span></div>';
-  } else if (S.settings.view === 'tiles') h += '<div class="tiles">' + a.map(entryTile).join('') + '</div>';
+  } else if (viewOf(V.id) === 'groups') h += groupsHtml(a);
+  else if (viewOf(V.id) === 'tiles') h += '<div class="tiles">' + a.map(entryTile).join('') + '</div>';
   else h += '<div class="rows">' + a.map(entryRow).join('') + '</div>';
   $('#items').innerHTML = h;
   alphaBuild(a);
@@ -322,7 +343,7 @@ function fillItems() {
 const alphaOf = t => { const c = sortKey(t).charAt(0).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase(); return /[A-Z]/.test(c) ? c : '#'; };
 function alphaBuild(a) {
   let el = $('#alpha');
-  const on = V.kind === 'list' && sortOf(V.id).k === 'title' && a.length > 12, desc = sortOf(V.id).d === 'desc';
+  const on = V.kind === 'list' && viewOf(V.id) !== 'groups' && sortOf(V.id).k === 'title' && a.length > 12, desc = sortOf(V.id).d === 'desc';
   if (!on) { if (el) el.remove(); return; }
   if (!el) { el = document.createElement('div'); el.id = 'alpha'; document.body.appendChild(el); alphaBind(el); }
   const kids = $('#items').querySelector('.rows,.tiles').children, first = {};
@@ -1630,7 +1651,9 @@ const A = {
   drawer: openDrawer, closedrawer: closeDrawer, closesheet: closeSheet,
   back: () => { if (history.length > 1) history.back(); else location.hash = '#/l/' + S.lists[0].id; },
   confirmok: () => { const f = CONFIRM; CONFIRM = null; closeSheet(); if (f) f(); },
-  view: (d) => { S.settings.view = d.v; save(); renderList(); },
+  view: (d) => { S.settings.views = S.settings.views || {}; S.settings.views[V.id] = d.v; if (d.v !== 'groups') S.settings.view = d.v; save(); renderList(); },
+  grptoggle: d => { V.gc = V.gc || new Set(); if (V.gc.has(d.k)) V.gc.delete(d.k); else V.gc.add(d.k); fillItems(); },
+  grpjump: d => { V.gc = V.gc || new Set(); if (V.gc.has(d.k)) { V.gc.delete(d.k); fillItems(); } const el = document.getElementById('g-' + d.k); if (el) el.scrollIntoView({ block: 'start' }); },
   togglesearch: () => { V.sq = !V.sq; if (!V.sq) { V.q = ''; if (V.kind === 'pub') { pubSearchReset(); return; } } if (V.kind === 'pub') renderPub(); else renderList(); },
   sheetfilter: sheetFilter, sheetsort: sheetSort, sheetmore: sheetMore,
   ftype: d => { V.f.type = d.t; S.settings.typeSel = Object.assign({}, S.settings.typeSel, { [V.id]: d.t }); save(); renderList(); },
